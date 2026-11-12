@@ -92,7 +92,7 @@ func (u *updateControls) update(gtx layout.Context) {
 			u.window.Perform(system.ActionClose)
 		case result.release != nil:
 			u.release = result.release
-			u.status = result.release.Tag + " is available. Installing restarts Wireproxy and disconnects the proxy."
+			u.status = ""
 		default:
 			u.release = nil
 			u.status = "No newer release found."
@@ -122,8 +122,12 @@ func (u *updateControls) shutdown() {
 
 func (u *updateControls) layout(d *desktop) layout.Widget {
 	_, released := stableVersion(version)
+	status := d.tr(u.status)
+	if u.release != nil && status == "" {
+		status = d.tr("Available version") + " " + u.release.Tag + ". " + d.tr("Installing restarts Wireproxy and disconnects the proxy.")
+	}
 	return stack(layout.Vertical,
-		layout.Rigid(d.label(13, "App updates  ·  "+version, textColor, font.Bold)),
+		layout.Rigid(d.rawLabel(13, d.tr("App updates")+"  ·  "+version, textColor, font.Bold)),
 		gap(5),
 		layout.Rigid(d.label(13, u.status, muted, font.Normal)),
 		gap(8),

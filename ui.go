@@ -6,6 +6,7 @@ import (
 	"io"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"gioui.org/app"
 	"gioui.org/font"
@@ -33,6 +34,14 @@ var (
 )
 
 type desktop struct {
+	window                                                      *app.Window
+	settingsList                                                widget.List
+	host, username, password, link                              widget.Editor
+	ru                                                          widget.Bool
+	linkTab, iniTab, convert, probe, pin, quickConnect          widget.Clickable
+	editINI, probing                                            bool
+	probeResult                                                 chan profileProbeResult
+	selectedProtocol                                            string
 	updates                                                     updateControls
 	theme                                                       *material.Theme
 	path                                                        string
@@ -53,14 +62,18 @@ type desktop struct {
 }
 
 func newDesktop(window *app.Window, path string, pathErr error) *desktop {
-	d := &desktop{theme: material.NewTheme(), path: path, selected: -1, loadErr: pathErr}
+	d := &desktop{window: window, theme: material.NewTheme(), path: path, selected: -1, loadErr: pathErr,
+		probeResult: make(chan profileProbeResult, 1)}
 	d.theme.Shaper = text.NewShaper(text.WithCollection(gofont.Collection()))
 	d.theme.Palette = material.Palette{
 		Bg: background, Fg: textColor, ContrastBg: accent, ContrastFg: background,
 	}
 	d.session.notify = window.Invalidate
 	d.profilesList.Axis, d.logsList.Axis = layout.Vertical, layout.Vertical
+	d.settingsList.Axis = layout.Vertical
 	d.name.SingleLine, d.port.SingleLine = true, true
+	d.host.SingleLine, d.username.SingleLine, d.password.SingleLine, d.link.SingleLine = true, true, true, true
+	d.password.Mask = '•'
 	d.port.Filter = "0123456789"
 	d.tunnel.WrapPolicy = text.WrapGraphemes
 	if d.loadErr == nil {
@@ -73,6 +86,7 @@ func newDesktop(window *app.Window, path string, pathErr error) *desktop {
 	d.refreshRows()
 	if len(d.cfg.Profiles) > 0 {
 		d.selected = 0
+		d.refreshProtocol()
 	}
 	return d
 }
@@ -86,11 +100,15 @@ func (d *desktop) refreshRows() {
 
 func (d *desktop) loadSettings() {
 	d.port.SetText(strconv.Itoa(d.cfg.Settings.Port))
+	d.host.SetText(d.cfg.Settings.Host)
+	d.username.SetText(d.cfg.Settings.Username)
+	d.password.SetText(d.cfg.Settings.Password)
+	d.ru.Value = d.cfg.Settings.Language == "ru"
 	d.verbose.Value = d.cfg.Settings.Verbose
 }
 
 func (d *desktop) feedback(message string, failed bool) {
-	d.message, d.messageError = message, failed
+	d.message, d.messageError = d.tr(message), failed
 }
 
 func (d *desktop) persist(cfg configuration) bool {
@@ -110,25 +128,35 @@ func (d *desktop) beginEdit(index int) {
 	d.selected, d.editing, d.deleting = index, true, false
 	d.name.SetText("")
 	d.tunnel.SetText("")
+	d.link.SetText("")
+	d.editINI = false
 	d.showTunnel.Value = false
 	if index >= 0 {
 		d.name.SetText(d.cfg.Profiles[index].Name)
-		d.tunnel.SetText(d.cfg.Profiles[index].Config)
+		config := d.cfg.Profiles[index].Config
+		d.editINI = !strings.HasPrefix(strings.TrimSpace(config), amneziaScheme)
+		if d.editINI {
+			d.tunnel.SetText(config)
+		} else {
+			d.link.SetText(config)
+		}
 	}
 }
 
 func (d *desktop) endEdit() {
 	d.editing = false
 	d.tunnel.SetText("")
+	d.link.SetText("")
 	if d.selected < 0 && len(d.cfg.Profiles) > 0 {
 		d.selected = 0
 	}
+	d.refreshProtocol()
 }
 
 func (d *desktop) saveProfile() {
-	p := profile{Name: strings.TrimSpace(d.name.Text()), Config: strings.TrimSpace(d.tunnel.Text())}
-	if p.Name == "" || len(p.Name) > 96 || p.Config == "" || len(p.Config) > maxConfigLength {
-		d.feedback("Enter a name up to 96 bytes and an Amnezia link or WireGuard config.", true)
+	p := profile{Name: strings.TrimSpace(d.name.Text()), Config: d.draftConfig()}
+	if p.Name == "" || utf8.RuneCountInString(p.Name) > 96 || p.Config == "" || len(p.Config) > maxConfigLength {
+		d.feedback("Enter a server name and a WireGuard configuration.", true)
 		return
 	}
 	for i, existing := range d.cfg.Profiles {
@@ -144,6 +172,9 @@ func (d *desktop) saveProfile() {
 		index = len(cfg.Profiles)
 		cfg.Profiles = append(cfg.Profiles, p)
 	} else {
+		if cfg.DefaultProfile == cfg.Profiles[index].Name {
+			cfg.DefaultProfile = p.Name
+		}
 		cfg.Profiles[index] = p
 	}
 	if d.persist(cfg) {
@@ -157,16 +188,21 @@ func (d *desktop) saveProfile() {
 func (d *desktop) deleteProfile() {
 	cfg := d.cfg
 	cfg.Profiles = append([]profile(nil), cfg.Profiles...)
+	if cfg.DefaultProfile == cfg.Profiles[d.selected].Name {
+		cfg.DefaultProfile = ""
+	}
 	cfg.Profiles = append(cfg.Profiles[:d.selected], cfg.Profiles[d.selected+1:]...)
 	if d.persist(cfg) {
 		d.selected = min(d.selected, len(cfg.Profiles)-1)
 		d.deleting = false
 		d.refreshRows()
+		d.refreshProtocol()
 		d.feedback("Server removed.", false)
 	}
 }
 
 func (d *desktop) actions(gtx layout.Context, view sessionView) {
+	d.profileActions(gtx, view)
 	for index := range d.tabs {
 		if d.tabs[index].Clicked(gtx) && d.page != index {
 			d.page = index
@@ -208,10 +244,7 @@ func (d *desktop) actions(gtx layout.Context, view sessionView) {
 			}
 		}
 		if d.connect.Clicked(gtx) && d.selected >= 0 && !view.active {
-			d.feedback("", false)
-			if err := d.session.start(d.cfg.Profiles[d.selected], d.cfg.Settings); err != nil {
-				d.feedback(err.Error(), true)
-			}
+			d.connectProfile(d.cfg.Profiles[d.selected])
 		}
 	}
 	if d.stop.Clicked(gtx) {
@@ -223,20 +256,25 @@ func (d *desktop) actions(gtx layout.Context, view sessionView) {
 		d.logsList.Position.First = 0
 	}
 	if d.copy.Clicked(gtx) && view.ready {
-		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader("socks5://" + view.address))})
+		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader("socks5://" + proxyClientAddress(view.address)))})
 		d.feedback("SOCKS5 address copied.", false)
 	}
 	if d.saveSettings.Clicked(gtx) && d.page == 1 {
-		port, err := strconv.Atoi(d.port.Text())
-		if err != nil || port < 1 || port > 65535 {
-			d.feedback("Enter a port between 1 and 65535.", true)
+		port, _ := strconv.Atoi(d.port.Text())
+		next := settings{Host: strings.Trim(strings.TrimSpace(d.host.Text()), "[]"), Port: port,
+			Username: d.username.Text(), Password: d.password.Text(), Verbose: d.verbose.Value, Language: "en"}
+		if d.ru.Value {
+			next.Language = "ru"
+		}
+		if err := next.validate(); err != nil {
+			d.feedback(err.Error(), true)
 		} else {
 			cfg := d.cfg
-			cfg.Settings = settings{Port: port, Verbose: d.verbose.Value}
+			cfg.Settings = next
 			if d.persist(cfg) {
 				message := "Settings saved."
 				if view.active {
-					message += " Reconnect to apply them."
+					message = "Settings saved. Reconnect to apply them."
 				}
 				d.feedback(message, false)
 			}
@@ -258,6 +296,10 @@ func hexColor(value uint32) color.NRGBA {
 }
 
 func (d *desktop) label(size unit.Sp, value string, ink color.NRGBA, weight font.Weight) layout.Widget {
+	return d.rawLabel(size, d.tr(value), ink, weight)
+}
+
+func (d *desktop) rawLabel(size unit.Sp, value string, ink color.NRGBA, weight font.Weight) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		style := material.Label(d.theme, size, value)
 		style.Color, style.Font.Weight = ink, weight
@@ -299,6 +341,10 @@ func panel(fill color.NRGBA, radius, inset unit.Dp, content layout.Widget) layou
 }
 
 func (d *desktop) button(click *widget.Clickable, name string, fill, ink color.NRGBA, enabled bool) layout.Widget {
+	return d.rawButton(click, d.tr(name), fill, ink, enabled)
+}
+
+func (d *desktop) rawButton(click *widget.Clickable, name string, fill, ink color.NRGBA, enabled bool) layout.Widget {
 	return func(gtx layout.Context) layout.Dimensions {
 		buttonInk := ink
 		if !enabled {
@@ -317,7 +363,7 @@ func (d *desktop) field(editor *widget.Editor, hint string, height unit.Dp) layo
 		gtx.Constraints.Min.X = gtx.Constraints.Max.X
 		gtx.Constraints.Min.Y = min(gtx.Dp(height), gtx.Constraints.Max.Y)
 		gtx.Constraints.Max.Y = gtx.Constraints.Min.Y
-		style := material.Editor(d.theme, editor, hint)
+		style := material.Editor(d.theme, editor, d.tr(hint))
 		style.TextSize = 14
 		return style.Layout(gtx)
 	})
@@ -404,28 +450,51 @@ func (d *desktop) statusBar(view sessionView) layout.Widget {
 	}
 	if view.ready {
 		details = view.profile + "  ·  " + view.address
+		if view.protocol != "" {
+			details += "  ·  " + view.protocol
+		}
 		ink = accent
 	} else if status == "Proxy failed" {
 		details = "See Logs for details"
 		ink = warning
 	} else if !view.active {
-		details = "SOCKS5  ·  " + proxyAddress(d.cfg.Settings.Port)
+		details = "SOCKS5  ·  " + d.cfg.Settings.bindAddress()
 	}
 	checkLabel := "Test SOCKS5"
 	if view.checking {
 		checkLabel = "Testing…"
 	}
-	return panel(surface, 12, 13, stack(layout.Horizontal,
+	server, pinned := d.defaultProfile()
+	pinRow := layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+		if !pinned {
+			return layout.Dimensions{}
+		}
+		return layout.Inset{Bottom: 8}.Layout(gtx, stack(layout.Horizontal,
+			layout.Flexed(1, d.rawLabel(14, d.tr("Default server")+"  ·  "+server.Name, accent, font.Bold)),
+			layout.Rigid(d.button(&d.quickConnect, "Connect", accent, background, !view.active)),
+		))
+	})
+	stopLabel := "Disconnect"
+	if status == "Stopping" {
+		stopLabel = "Disconnecting…"
+	}
+	return panel(surface, 12, 13, stack(layout.Vertical, pinRow, layout.Rigid(stack(layout.Horizontal,
 		layout.Flexed(1, stack(layout.Vertical,
 			layout.Rigid(d.label(15, status, ink, font.Bold)),
 			layout.Rigid(d.label(12, details, muted, font.Normal)),
 		)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if status != "Stopping" {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Right: 8}.Layout(gtx, material.Loader(d.theme).Layout)
+		}),
 		layout.Rigid(d.button(&d.copy, "Copy address", inputFill, textColor, view.ready)),
 		gap(7),
 		layout.Rigid(d.button(&d.check, checkLabel, inputFill, textColor, view.ready && !view.checking)),
 		gap(7),
-		layout.Rigid(d.button(&d.stop, "Disconnect", selection, textColor, view.active && status != "Stopping")),
-	))
+		layout.Rigid(d.button(&d.stop, stopLabel, selection, textColor, view.active && status != "Stopping")),
+	))))
 }
 
 func (d *desktop) serversPage(gtx layout.Context, view sessionView) layout.Dimensions {
@@ -450,7 +519,7 @@ func (d *desktop) serversPage(gtx layout.Context, view sessionView) layout.Dimen
 								fill, ink = selection, accent
 							}
 							gtx.Constraints.Min.X = gtx.Constraints.Max.X
-							return d.button(d.rows[index], d.cfg.Profiles[index].Name, fill, ink, true)(gtx)
+							return d.rawButton(d.rows[index], d.cfg.Profiles[index].Name, fill, ink, true)(gtx)
 						})
 					}),
 				)
@@ -484,19 +553,36 @@ func (d *desktop) profileForm() layout.Widget {
 	}
 	if d.showTunnel.Value {
 		d.tunnel.Mask = 0
+		d.link.Mask = 0
 	} else {
 		d.tunnel.Mask = '•'
+		d.link.Mask = '•'
+	}
+	editor, hint := &d.link, "vpn://…"
+	linkFill, iniFill := selection, inputFill
+	if d.editINI {
+		editor, hint = &d.tunnel, "[Interface] …"
+		linkFill, iniFill = inputFill, selection
+	}
+	probeLabel := "Check profile"
+	if d.probing {
+		probeLabel = "Checking…"
 	}
 	return stack(layout.Vertical,
 		layout.Rigid(d.label(22, title, textColor, font.Bold)), gap(16),
 		layout.Rigid(d.label(13, "Server name", muted, font.Medium)), gap(5),
 		layout.Rigid(d.field(&d.name, "e.g. Home server", 20)), gap(12),
-		layout.Rigid(d.label(13, "Amnezia link or WireGuard INI", muted, font.Medium)), gap(5),
-		layout.Rigid(d.field(&d.tunnel, "vpn://… or [Interface] …", 94)),
-		layout.Rigid(material.CheckBox(d.theme, &d.showTunnel, "Show configuration").Layout),
+		layout.Rigid(stack(layout.Horizontal,
+			layout.Rigid(d.button(&d.linkTab, "vpn://", linkFill, textColor, true)), gap(6),
+			layout.Rigid(d.button(&d.iniTab, "INI", iniFill, textColor, true)), gap(6),
+			layout.Rigid(d.button(&d.convert, "Convert to INI", inputFill, textColor, !d.editINI && d.link.Len() > 0)),
+		)), gap(6),
+		layout.Rigid(d.field(editor, hint, 94)),
+		layout.Rigid(material.CheckBox(d.theme, &d.showTunnel, d.tr("Show configuration")).Layout),
 		gap(9),
 		layout.Rigid(stack(layout.Horizontal,
 			layout.Rigid(d.button(&d.save, "Save server", accent, background, true)), gap(8),
+			layout.Rigid(d.button(&d.probe, probeLabel, selection, textColor, !d.probing)), gap(8),
 			layout.Rigid(d.button(&d.cancel, "Cancel", selection, textColor, true)),
 		)),
 	)
@@ -508,7 +594,7 @@ func (d *desktop) profileDetails(view sessionView) layout.Widget {
 	if strings.HasPrefix(p.Config, "vpn://") {
 		format = "Amnezia VPN link"
 	}
-	hint := "SOCKS5  " + proxyAddress(d.cfg.Settings.Port)
+	hint := "SOCKS5  " + d.cfg.Settings.bindAddress()
 	if view.active {
 		hint = "Disconnect the current proxy before starting another server."
 	}
@@ -516,8 +602,13 @@ func (d *desktop) profileDetails(view sessionView) layout.Widget {
 	if d.deleting {
 		removeLabel = "Confirm removal"
 	}
+	pinLabel := "Set as default"
+	if d.cfg.DefaultProfile == p.Name {
+		pinLabel = "Clear default"
+	}
 	return stack(layout.Vertical,
-		layout.Rigid(d.label(24, p.Name, textColor, font.Bold)), gap(8),
+		layout.Rigid(d.rawLabel(24, p.Name, textColor, font.Bold)), gap(8),
+		layout.Rigid(d.rawLabel(14, d.tr("Protocol")+"  ·  "+d.tr(d.selectedProtocol), accent, font.Medium)), gap(7),
 		layout.Rigid(d.label(14, format, muted, font.Normal)), gap(20),
 		layout.Rigid(d.label(13, hint, muted, font.Normal)), gap(13),
 		layout.Rigid(stack(layout.Horizontal,
@@ -525,27 +616,43 @@ func (d *desktop) profileDetails(view sessionView) layout.Widget {
 			layout.Rigid(d.button(&d.edit, "Edit", selection, textColor, true)), gap(7),
 			layout.Rigid(d.button(&d.remove, removeLabel, inputFill, warning, true)),
 		)),
+		gap(8), layout.Rigid(d.button(&d.pin, pinLabel, selection, textColor, true)),
 	)
 }
 
 func (d *desktop) settingsPage(gtx layout.Context) layout.Dimensions {
 	gtx.Constraints.Min = gtx.Constraints.Max
-	return panel(surface, 12, 20, stack(layout.Vertical,
-		layout.Rigid(d.label(22, "Proxy settings", textColor, font.Bold)), gap(18),
-		layout.Rigid(d.label(13, "Local SOCKS5 port", muted, font.Medium)), gap(5),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(160))
-			gtx.Constraints.Min.X = 0
-			return d.field(&d.port, "1080", 20)(gtx)
-		}), gap(9),
-		layout.Rigid(d.label(13, "The proxy listens on 127.0.0.1.", muted, font.Normal)), gap(10),
-		layout.Rigid(material.CheckBox(d.theme, &d.verbose, "Verbose WireGuard logs").Layout), gap(10),
-		layout.Rigid(d.button(&d.saveSettings, "Save settings", accent, background, true)), gap(25),
-		layout.Rigid(d.label(13, "Profiles file", muted, font.Medium)), gap(5),
-		layout.Rigid(d.label(13, d.path, textColor, font.Normal)),
-		gap(16),
-		layout.Rigid(d.updates.layout(d)),
-	))(gtx)
+	field := func(label, hint string, editor *widget.Editor) layout.Widget {
+		return stack(layout.Vertical,
+			layout.Rigid(d.label(13, label, muted, font.Medium)), gap(5),
+			layout.Rigid(d.field(editor, hint, 20)),
+		)
+	}
+	rows := []layout.Widget{
+		d.label(22, "Proxy settings", textColor, font.Bold),
+		stack(layout.Horizontal,
+			layout.Flexed(2, field("SOCKS5 listen address", "127.0.0.1", &d.host)), gap(12),
+			layout.Flexed(1, field("SOCKS5 port", "1080", &d.port)),
+		),
+		d.label(13, "Use 0.0.0.0 for all IPv4 interfaces or :: for IPv6.", muted, font.Normal),
+		stack(layout.Horizontal,
+			layout.Flexed(1, field("SOCKS5 username", "Optional", &d.username)), gap(12),
+			layout.Flexed(1, field("SOCKS5 password", "Optional", &d.password)),
+		),
+		material.CheckBox(d.theme, &d.verbose, d.tr("Verbose WireGuard logs")).Layout,
+		material.CheckBox(d.theme, &d.ru, "Русский интерфейс / Russian UI").Layout,
+		d.button(&d.saveSettings, "Save settings", accent, background, true),
+		stack(layout.Vertical,
+			layout.Rigid(d.label(13, "Profiles file", muted, font.Medium)), gap(5),
+			layout.Rigid(d.rawLabel(13, d.path, textColor, font.Normal)),
+		),
+		d.updates.layout(d),
+	}
+	return panel(surface, 12, 20, func(gtx layout.Context) layout.Dimensions {
+		return material.List(d.theme, &d.settingsList).Layout(gtx, len(rows), func(gtx layout.Context, index int) layout.Dimensions {
+			return layout.Inset{Bottom: 10, Right: 5}.Layout(gtx, rows[index])
+		})
+	})(gtx)
 }
 
 func (d *desktop) logsPage(gtx layout.Context, view sessionView) layout.Dimensions {
@@ -559,6 +666,7 @@ func (d *desktop) logsPage(gtx layout.Context, view sessionView) layout.Dimensio
 			)),
 			gap(12),
 			layout.Flexed(1, panel(inputFill, 8, 12, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Min.X = gtx.Constraints.Max.X
 				if len(view.logs) == 0 {
 					return d.label(13, "Connect to a server to see activity here.", muted, font.Normal)(gtx)
 				}

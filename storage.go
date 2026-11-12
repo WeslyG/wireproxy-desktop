@@ -14,13 +14,18 @@ type profile struct {
 }
 
 type settings struct {
-	Port    int  `json:"port"`
-	Verbose bool `json:"verbose"`
+	Host     string `json:"host"`
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	Language string `json:"language"`
+	Port     int    `json:"port"`
+	Verbose  bool   `json:"verbose"`
 }
 
 type configuration struct {
-	Profiles []profile `json:"profiles"`
-	Settings settings  `json:"settings"`
+	DefaultProfile string    `json:"defaultProfile,omitempty"`
+	Profiles       []profile `json:"profiles"`
+	Settings       settings  `json:"settings"`
 }
 
 func configPath(portable bool) (string, error) {
@@ -39,7 +44,7 @@ func configPath(portable bool) (string, error) {
 }
 
 func loadConfig(path string) (configuration, error) {
-	cfg := configuration{Settings: settings{Port: 1080}}
+	cfg := configuration{Settings: settings{Host: "127.0.0.1", Port: 1080, Language: "en", Verbose: true}}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return cfg, nil

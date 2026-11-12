@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 
@@ -24,18 +25,22 @@ type proxySession struct {
 	profile, address, status  string
 	ready, stopping, checking bool
 	logs                      []string
+	options                   settings
+	protocol                  string
 }
 
 type sessionView struct {
 	profile, address, status string
 	active, ready, checking  bool
 	logs                     []string
+	protocol                 string
 }
 
 func (s *proxySession) view(includeLogs bool) sessionView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v := sessionView{s.profile, s.address, s.status, s.process != nil, s.ready, s.checking, nil}
+	v := sessionView{profile: s.profile, address: s.address, status: s.status,
+		active: s.process != nil, ready: s.ready, checking: s.checking, protocol: s.protocol}
 	if includeLogs {
 		v.logs = append([]string(nil), s.logs...)
 	}
@@ -83,9 +88,11 @@ func (s *proxySession) start(p profile, options settings) error {
 		return err
 	}
 	s.process, s.input, s.done = cmd, input, make(chan struct{})
-	s.profile, s.address, s.status = p.Name, proxyAddress(options.Port), "Starting"
+	s.options = options
+	s.protocol = ""
+	s.profile, s.address, s.status = p.Name, options.bindAddress(), "Starting"
 	s.logLocked("Starting " + p.Name)
-	go s.monitor(cmd, input, output, workerConfig{p.Config, options.Port, options.Verbose})
+	go s.monitor(cmd, input, output, workerConfig{Config: p.Config, settings: options})
 	return nil
 }
 
@@ -110,7 +117,12 @@ func (s *proxySession) monitor(cmd *exec.Cmd, input io.WriteCloser, output io.Re
 			}
 			s.logLocked("AmneziaWG / WireGuard handshake confirmed")
 		default:
-			s.logLocked(line)
+			if protocol, ok := strings.CutPrefix(line, protocolStatus); ok {
+				s.protocol = protocol
+				s.logLocked("Tunnel protocol: " + protocol)
+			} else {
+				s.logLocked(line)
+			}
 		}
 		s.mu.Unlock()
 		s.notify()
@@ -139,8 +151,8 @@ func (s *proxySession) stop() <-chan struct{} {
 	defer s.mu.Unlock()
 	if s.process != nil && !s.stopping {
 		s.ready, s.stopping, s.status = false, true, "Stopping"
-		_ = s.input.Close()
-		process, done := s.process.Process, s.done
+		input, process, done := s.input, s.process.Process, s.done
+		go input.Close()
 		go func() {
 			select {
 			case <-done:
@@ -158,11 +170,11 @@ func (s *proxySession) check() {
 	if !s.ready || s.checking {
 		return
 	}
-	process, address := s.process, s.address
+	process, options := s.process, s.options
 	s.checking = true
 	s.logLocked("Checking HTTPS through SOCKS5")
 	go func() {
-		message := checkHTTPS(address)
+		message := checkHTTPS(options)
 		s.mu.Lock()
 		if s.process == process {
 			s.checking = false
@@ -173,8 +185,12 @@ func (s *proxySession) check() {
 	}()
 }
 
-func checkHTTPS(address string) string {
-	dialer, err := proxy.SOCKS5("tcp", address, nil, proxy.Direct)
+func checkHTTPS(options settings) string {
+	var auth *proxy.Auth
+	if options.Username != "" {
+		auth = &proxy.Auth{User: options.Username, Password: options.Password}
+	}
+	dialer, err := proxy.SOCKS5("tcp", options.clientAddress(), auth, proxy.Direct)
 	if err != nil {
 		return "Could not initialize the SOCKS5 check"
 	}

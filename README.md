@@ -9,20 +9,26 @@ administrator privileges, a separate wireproxy executable, or an installer.
 
 1. Under **Servers**, click **Add**, enter a name, and paste the entire
    `vpn://` link or the contents of an AmneziaWG or WireGuard INI file.
-2. Save and click **Connect**. Set your browser or other client to
+   **Check profile** tries an HTTPS request through the draft tunnel before
+   saving. **Convert to INI** opens the decoded configuration in the INI tab.
+2. Save and click **Connect**. Select **Set as default** to pin the server
+   and its Connect button above the list. Set your browser or other client to
    `socks5://127.0.0.1:1080`, or use **Copy address**.
 3. Click **Test SOCKS5** to send an HTTPS request through the tunnel to
-   `example.com`. **Logs** shows the handshake and the test result.
+   `example.com`. **Logs** shows the handshake, WireGuard engine messages,
+   and the test result. Enable **Verbose WireGuard logs** for handshake attempts,
+   retries, and device events. The protocol label is inferred from the profile.
 4. Disconnect and select another saved profile to switch servers.
 
-**Settings** has the local SOCKS5 port and a verbose logging toggle. Changes
-apply on the next connection. The listener is local to the machine. Your
-applications choose whether to use it. When importing INI, the app uses
+**Settings** has English and Russian, a SOCKS5 listen address and port, and
+optional username/password authentication. Enter `0.0.0.0` for all IPv4
+interfaces or `::` for IPv6. Proxy settings apply on the next connection.
+When importing INI, the app uses
 `[Interface]` and `[Peer]` for the tunnel. The GUI supplies the SOCKS5 listener.
 
 Profiles and settings are saved in the OS user configuration directory. See
 **Settings** for the exact path. To store them alongside the executable,
-launch it with `--portable`. Profiles contain private keys and are stored as
+launch it with `--portable`. Private keys and SOCKS5 credentials are stored as
 plain JSON under your user account. Keep the profile file private when copying
 or backing up the executable. The activity log stays in memory.
 

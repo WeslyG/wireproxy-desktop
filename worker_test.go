@@ -81,7 +81,8 @@ func TestWorkerRoutesSOCKS5ThroughWireGuard(t *testing.T) {
 	go func() { exited <- runWorker(input) }()
 	config := fmt.Sprintf("[Interface]\nAddress = 10.90.0.2/32\nPrivateKey = %s\n[Peer]\nPublicKey = %s\nEndpoint = %s\nAllowedIPs = 10.90.0.1/32\n",
 		base64.StdEncoding.EncodeToString(clientKey.Bytes()), base64.StdEncoding.EncodeToString(serverKey.PublicKey().Bytes()), endpoint)
-	if err := json.NewEncoder(parent).Encode(workerConfig{Config: config, Port: port}); err != nil {
+	options := settings{Host: "0.0.0.0", Port: port, Username: "test-user", Password: "test-password"}
+	if err := json.NewEncoder(parent).Encode(workerConfig{Config: config, settings: options}); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(5 * time.Second)
@@ -97,7 +98,15 @@ func TestWorkerRoutesSOCKS5ThroughWireGuard(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	dialer, err := proxy.SOCKS5("tcp", proxyAddress(port), nil, proxy.Direct)
+	unauthenticated, err := proxy.SOCKS5("tcp", options.clientAddress(), nil, proxy.Direct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if conn, err := unauthenticated.Dial("tcp", "10.90.0.1:8080"); err == nil {
+		conn.Close()
+		t.Fatal("SOCKS5 accepted a client without credentials")
+	}
+	dialer, err := proxy.SOCKS5("tcp", options.clientAddress(), &proxy.Auth{User: options.Username, Password: options.Password}, proxy.Direct)
 	if err != nil {
 		t.Fatal(err)
 	}
