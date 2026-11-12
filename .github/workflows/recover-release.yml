@@ -1,0 +1,108 @@
+name: Recover release waiting for macOS ARM64
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag
+        required: true
+        type: string
+      build_run:
+        description: Tag-triggered build run containing the other five artifacts
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag }}
+  BUILD_RUN: ${{ inputs.build_run }}
+
+jobs:
+  build-arm:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build and sign ARM64 binary
+        shell: bash
+        env:
+          MACOSX_DEPLOYMENT_TARGET: '15.0'
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$BUILD_RUN" =~ ^[0-9]+$ ]]
+          go test ./...
+          mkdir -p dist
+          output=dist/wireproxy-desktop-macos-arm64
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=$RELEASE_TAG" -o "$output" .
+          lipo -verify_arch arm64 "$output"
+          codesign --force --sign - "$output"
+          codesign --verify "$output"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: recovered-macos-arm64
+          path: dist/wireproxy-desktop-macos-arm64
+          if-no-files-found: error
+
+  release:
+    needs: build-arm
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: write
+    concurrency:
+      group: release-${{ inputs.release_tag }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.release_tag }}
+      - name: Verify artifact source
+        shell: bash
+        run: |
+          sha=$(git rev-parse HEAD)
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$BUILD_RUN" |
+            jq -e --arg sha "$sha" --arg tag "$RELEASE_TAG" '
+              .event == "push" and .head_sha == $sha and .head_branch == $tag and
+              .path == ".github/workflows/build.yml"
+            '
+      - uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.build_run }}
+          pattern: wireproxy-desktop-*
+          path: dist
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: recovered-macos-arm64
+          path: dist
+      - name: Publish the existing tag
+        shell: bash
+        run: |
+          if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == false ]]; then
+            exit 0
+          fi
+          files=(
+            wireproxy-desktop-linux-amd64 wireproxy-desktop-linux-arm64
+            wireproxy-desktop-macos-amd64 wireproxy-desktop-macos-arm64
+            wireproxy-desktop-windows-amd64.exe wireproxy-desktop-windows-arm64.exe
+          )
+          (cd dist && sha256sum "${files[@]}" > SHA256SUMS)
+          awk -v tag="$RELEASE_TAG" '
+            /^## / { if (found) exit; found = ($0 == "## " tag); next }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+          assets=(dist/SHA256SUMS)
+          for file in "${files[@]}"; do assets+=("dist/$file"); done
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --verify-tag --generate-notes --notes-file release-notes.md --title "$RELEASE_TAG"
