@@ -1,6 +1,11 @@
-name: Build desktop binaries
+name: Build and release desktop binaries
 
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,8 +18,12 @@ jobs:
         include:
           - runner: windows-2025
             target: windows-amd64
+          - runner: windows-11-arm
+            target: windows-arm64
           - runner: ubuntu-24.04
             target: linux-amd64
+          - runner: ubuntu-24.04-arm
+            target: linux-arm64
           - runner: macos-15-intel
             target: macos-amd64
           - runner: macos-15
@@ -34,24 +43,66 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
+          version=dev
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+            version="$GITHUB_REF_NAME"
+          fi
+          flags="-s -w -X main.version=$version"
           case "${{ runner.os }}" in
             Windows)
               export CGO_ENABLED=0
               go test ./...
-              go build -trimpath -ldflags="-s -w -H=windowsgui" -o "dist/wireproxy-desktop-${{ matrix.target }}.exe" .
+              go build -trimpath -ldflags="$flags -H=windowsgui" -o "dist/wireproxy-desktop-${{ matrix.target }}.exe" .
               ;;
             Linux)
               export CGO_ENABLED=1
               go test -tags novulkan ./...
-              go build -tags novulkan -trimpath -ldflags="-s -w" -o "dist/wireproxy-desktop-${{ matrix.target }}" .
+              go build -tags novulkan -trimpath -ldflags="$flags" -o "dist/wireproxy-desktop-${{ matrix.target }}" .
               ;;
             macOS)
               export CGO_ENABLED=1
               go test ./...
-              go build -trimpath -ldflags="-s -w" -o "dist/wireproxy-desktop-${{ matrix.target }}" .
+              output="dist/wireproxy-desktop-${{ matrix.target }}"
+              go build -trimpath -ldflags="$flags" -o "$output" .
+              codesign --force --sign - "$output"
+              codesign --verify "$output"
               ;;
           esac
       - uses: actions/upload-artifact@v4
         with:
           name: wireproxy-desktop-${{ matrix.target }}
           path: dist/*
+          if-no-files-found: error
+
+  release:
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wireproxy-desktop-*
+          path: dist
+          merge-multiple: true
+      - name: Publish release and changelog
+        shell: bash
+        run: |
+          (
+            cd dist
+            sha256sum wireproxy-desktop-* > SHA256SUMS
+          )
+          awk -v tag="$GITHUB_REF_NAME" '
+            /^## / { if (found) exit; found = ($0 == "## " tag); next }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag --generate-notes --notes-file release-notes.md --title "$GITHUB_REF_NAME"

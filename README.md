@@ -26,6 +26,20 @@ launch it with `--portable`. Profiles contain private keys and are stored as
 plain JSON under your user account. Keep the profile file private when copying
 or backing up the executable. The activity log stays in memory.
 
+## Updates and releases
+
+Tagged builds check GitHub for a newer stable release when the app opens.
+Open **Settings → App updates** to check again or choose **Install and
+restart**. The app downloads the binary for the current OS and architecture,
+verifies its SHA-256 digest, then disconnects the proxy and restarts. The
+executable directory must be writable. Your profile file stays in place.
+
+For a release, add a `## vX.Y.Z` section to `CHANGELOG.md`, then push that
+tag. GitHub Actions tests and builds all six targets before publishing the
+binaries and `SHA256SUMS`. The release notes combine the matching changelog
+section with GitHub's generated notes. The updater reads the public Releases
+API for `WeslyG/wireproxy-desktop`.
+
 ## Build from source
 
 Use Go 1.26.11 or newer. Build separately for each OS and CPU architecture.
@@ -38,5 +52,6 @@ Use Go 1.26.11 or newer. Build separately for each OS and CPU architecture.
 
 Linux uses the graphics libraries already present in a desktop session.
 The macOS build is a raw executable that can be launched from Terminal.
+GitHub Actions applies an ad-hoc signature to both macOS binaries.
 See [Gio's installation guide](https://gioui.org/doc/install) for system
 requirements and additional architectures.

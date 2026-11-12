@@ -9,7 +9,9 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/font"
+	"gioui.org/font/gofont"
 	"gioui.org/io/clipboard"
+	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
@@ -31,6 +33,7 @@ var (
 )
 
 type desktop struct {
+	updates                                                     updateControls
 	theme                                                       *material.Theme
 	path                                                        string
 	cfg                                                         configuration
@@ -51,6 +54,7 @@ type desktop struct {
 
 func newDesktop(window *app.Window, path string, pathErr error) *desktop {
 	d := &desktop{theme: material.NewTheme(), path: path, selected: -1, loadErr: pathErr}
+	d.theme.Shaper = text.NewShaper(text.WithCollection(gofont.Collection()))
 	d.theme.Palette = material.Palette{
 		Bg: background, Fg: textColor, ContrastBg: accent, ContrastFg: background,
 	}
@@ -355,9 +359,30 @@ func (d *desktop) layout(gtx layout.Context) {
 	})
 }
 
+func (d *desktop) layoutWindow(gtx layout.Context, decoration *widget.Decorations, customTitle bool) {
+	if !customTitle {
+		d.layout(gtx)
+		return
+	}
+	layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			gtx.Constraints.Min.X = gtx.Constraints.Max.X
+			style := material.Decorations(d.theme, decoration,
+				system.ActionClose|system.ActionMinimize|system.ActionMaximize, "Wireproxy Desktop")
+			style.Background, style.Foreground = selection, textColor
+			style.Title.Color, style.Title.Font.Weight, style.Title.TextSize = textColor, font.Bold, 14
+			return style.Layout(gtx)
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			d.layout(gtx)
+			return layout.Dimensions{Size: gtx.Constraints.Max}
+		}),
+	)
+}
+
 func (d *desktop) header() layout.Widget {
 	return stack(layout.Horizontal,
-		layout.Rigid(d.label(26, "Wireproxy Desktop", textColor, font.Bold)),
+		layout.Rigid(d.label(22, [...]string{"Servers", "Settings", "Logs"}[d.page], textColor, font.Bold)),
 		layout.Flexed(1, layout.Spacer{}.Layout),
 		layout.Rigid(d.tab(0, "Servers")), gap(7),
 		layout.Rigid(d.tab(1, "Settings")), gap(7),
@@ -518,6 +543,8 @@ func (d *desktop) settingsPage(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(d.button(&d.saveSettings, "Save settings", accent, background, true)), gap(25),
 		layout.Rigid(d.label(13, "Profiles file", muted, font.Medium)), gap(5),
 		layout.Rigid(d.label(13, d.path, textColor, font.Normal)),
+		gap(16),
+		layout.Rigid(d.updates.layout(d)),
 	))(gtx)
 }
 
