@@ -66,7 +66,7 @@
 
 Go, [Gio](https://gioui.org/) для интерфейса, [wireproxy-awg](https://github.com/WeslyG/wireproxy-awg) и AmneziaWG-Go для туннеля. GitHub Actions собирает шесть платформенных вариантов. Требуется Go 1.26.11 или новее.
 
-Для разработки установите Docker и расширение **Dev Containers** в VS Code, откройте репозиторий и выберите **Dev Containers: Reopen in Container**. Контейнер включает Go и зависимости Gio для Linux. В его терминале выполните `go test -tags novulkan ./...` и `go build -tags novulkan -o dist/wireproxy-desktop .`. Для проверки окна и интеграции с хранилищем секретов запускайте сборку в графической сессии целевой ОС.
+Для разработки установите Docker и расширение **Dev Containers** в VS Code, откройте репозиторий и выберите **Dev Containers: Reopen in Container**. Контейнер включает Go и зависимости Gio для Linux. В его терминале выполните `go test -tags novulkan ./...` и `go build -tags novulkan -o ./wireproxy-desktop .`. Для проверки окна и интеграции с хранилищем секретов запускайте сборку в графической сессии целевой ОС.
 
 | Платформа | Команда |
 | --- | --- |

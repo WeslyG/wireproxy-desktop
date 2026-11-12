@@ -66,7 +66,7 @@ Release builds check GitHub Releases at startup. Open **Settings → Updates** t
 
 Go, [Gio](https://gioui.org/) for the interface, and [wireproxy-awg](https://github.com/WeslyG/wireproxy-awg) with AmneziaWG-Go for the tunnel. GitHub Actions builds six platform and architecture combinations. Go 1.26.11 or later is required.
 
-For development, install Docker and the **Dev Containers** extension in VS Code, open the repository, and choose **Dev Containers: Reopen in Container**. The container includes Go and Gio's Linux build dependencies. Run `go test -tags novulkan ./...` and `go build -tags novulkan -o dist/wireproxy-desktop .` from its terminal. To check the GUI and secret storage integration, run a build in a graphical session on the target OS.
+For development, install Docker and the **Dev Containers** extension in VS Code, open the repository, and choose **Dev Containers: Reopen in Container**. The container includes Go and Gio's Linux build dependencies. Run `go test -tags novulkan ./...` and `go build -tags novulkan -o ./wireproxy-desktop .` from its terminal. To check the GUI and secret storage integration, run a build in a graphical session on the target OS.
 
 | Platform | Command |
 | --- | --- |
