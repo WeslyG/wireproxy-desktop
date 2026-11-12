@@ -74,8 +74,11 @@ func loadAmneziaConfig(options ini.LoadOptions, link string) (*ini.File, error) 
 	if err != nil {
 		return nil, errors.New("invalid embedded WireGuard INI in Amnezia profile")
 	}
-	if iface, err := cfg.GetSection("Interface"); err == nil {
-		if dns, err := iface.GetKey("DNS"); err == nil {
+	for _, iface := range cfg.Sections() {
+		if !strings.EqualFold(iface.Name(), "Interface") {
+			continue
+		}
+		if dns := amneziaKey(iface, "DNS"); dns != nil {
 			dns.SetValue(strings.NewReplacer("$PRIMARY_DNS", profile.DNS1, "$SECONDARY_DNS", profile.DNS2).Replace(dns.Value()))
 		}
 		if err := applyAmneziaParameters(iface, client); err != nil {
@@ -83,6 +86,15 @@ func loadAmneziaConfig(options ini.LoadOptions, link string) (*ini.File, error) 
 		}
 	}
 	return cfg, nil
+}
+
+func amneziaKey(section *ini.Section, name string) *ini.Key {
+	for _, key := range section.Keys() {
+		if strings.EqualFold(key.Name(), name) {
+			return key
+		}
+	}
+	return nil
 }
 
 func decodeAmneziaProfile(link string) (*amneziaProfile, error) {
@@ -146,7 +158,11 @@ func applyAmneziaParameters(iface *ini.Section, client map[string]json.RawMessag
 			return errors.New("invalid Amnezia parameter " + name)
 		}
 		if value != "" {
-			iface.Key(name).SetValue(value)
+			if key := amneziaKey(iface, name); key != nil {
+				key.SetValue(value)
+			} else if _, err := iface.NewKey(name, value); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

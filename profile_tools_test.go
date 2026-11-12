@@ -47,6 +47,9 @@ func TestConvertAmneziaLinkPreservesTunnelParameters(t *testing.T) {
 	if strings.Contains(converted, "$PRIMARY_DNS") || profileProtocol(converted) != "AmneziaWG 2.0" {
 		t.Fatal("converted INI lost DNS or protocol parameters")
 	}
+	if !strings.Contains(converted, "[Interface]") || !strings.Contains(converted, "PrivateKey") {
+		t.Fatal("conversion changed WireGuard section or key spelling")
+	}
 	for _, config := range []string{link, converted} {
 		tunnel, err := parseTunnel(config)
 		if err != nil {

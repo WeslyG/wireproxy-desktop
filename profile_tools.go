@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/amnezia-vpn/amneziawg-go/v3/device"
+	"github.com/go-ini/ini"
 )
 
 func profileProtocol(config string) string {
@@ -50,7 +51,7 @@ func convertProfile(link string) (string, error) {
 	if !strings.HasPrefix(link, amneziaScheme) || len(link) > maxConfigLength {
 		return "", errors.New("Paste a complete vpn:// link.")
 	}
-	parsed, err := loadTunnelINI(link)
+	parsed, err := loadAmneziaConfig(ini.LoadOptions{AllowShadows: true, AllowNonUniqueSections: true}, link)
 	if err != nil {
 		return "", err
 	}
