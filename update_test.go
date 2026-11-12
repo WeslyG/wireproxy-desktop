@@ -70,7 +70,7 @@ func TestUpdateDiscoveryDownloadInstallAndRestart(t *testing.T) {
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/latest":
-					_ = json.NewEncoder(w).Encode(desktopRelease{Tag: "v1.11.0", Assets: []releaseAsset{
+					_ = json.NewEncoder(w).Encode(desktopRelease{Tag: "v1.11.0", Notes: "## Changes\n- Updated settings", Assets: []releaseAsset{
 						{Name: "other-platform", URL: "https://" + r.Host + "/wrong"},
 						{Name: filepath.Base(target), URL: "https://" + r.Host + "/binary", Size: int64(len(tc.payload)), Digest: digest},
 					}})
@@ -85,7 +85,7 @@ func TestUpdateDiscoveryDownloadInstallAndRestart(t *testing.T) {
 			defer cancel()
 			for _, current := range []string{"v1.11.0", "v1.12.0", "dev"} {
 				release, err := fetchRelease(ctx, server.Client(), server.URL+"/latest", current, filepath.Base(target))
-				if err != nil || release != nil {
+				if err != nil || release == nil || release.Asset.Name != "" || release.Notes == "" {
 					t.Fatalf("offered an update for %s: %v, %v", current, release, err)
 				}
 			}

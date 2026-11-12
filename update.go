@@ -40,6 +40,7 @@ type releaseAsset struct {
 
 type desktopRelease struct {
 	Tag    string         `json:"tag_name"`
+	Notes  string         `json:"body"`
 	Assets []releaseAsset `json:"assets"`
 	Asset  releaseAsset   `json:"-"`
 }
@@ -104,8 +105,11 @@ func fetchRelease(ctx context.Context, client *http.Client, endpoint, current, a
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(&release); err != nil {
 		return nil, fmt.Errorf("read release metadata: %w", err)
 	}
-	if !isNewer(release.Tag, current) {
+	if _, ok := stableVersion(release.Tag); !ok {
 		return nil, nil
+	}
+	if !isNewer(release.Tag, current) {
+		return &release, nil
 	}
 	for _, asset := range release.Assets {
 		if asset.Name == assetName {
@@ -113,7 +117,7 @@ func fetchRelease(ctx context.Context, client *http.Client, endpoint, current, a
 			return &release, nil
 		}
 	}
-	return nil, errors.New("the release has no binary for this platform")
+	return &release, errors.New("the release has no binary for this platform")
 }
 
 func updateGET(ctx context.Context, client *http.Client, endpoint, accept string) (*http.Response, error) {

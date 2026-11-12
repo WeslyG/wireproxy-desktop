@@ -33,30 +33,40 @@ var (
 )
 
 type desktop struct {
-	settingsList                                                widget.List
-	host, username, password, link                              widget.Editor
-	ru                                                          widget.Bool
-	linkTab, iniTab, convert, probe, pin, quickConnect          widget.Clickable
-	editINI, probing                                            bool
-	probeResult                                                 chan profileProbeResult
-	selectedProtocol                                            string
-	updates                                                     updateControls
-	theme                                                       *material.Theme
-	path                                                        string
-	cfg                                                         configuration
-	session                                                     proxySession
-	loadErr                                                     error
-	message                                                     string
-	messageError                                                bool
-	page, selected                                              int
-	rows                                                        []*widget.Clickable
-	profilesList, logsList                                      widget.List
-	name, tunnel, port                                          widget.Editor
-	verbose, showTunnel                                         widget.Bool
-	tabs                                                        [3]widget.Clickable
-	add, edit, connect, stop, check, copy, save, cancel, remove widget.Clickable
-	saveSettings, clearLogs, copyLogs                           widget.Clickable
-	editing, deleting                                           bool
+	settingsList                                          widget.List
+	profileEditorList                                     widget.List
+	username, password, link                              widget.Editor
+	auth, pin                                             widget.Bool
+	linkTab, iniTab, copyConfig, probe                    widget.Clickable
+	settingsTab                                           int
+	settingsTabs                                          [3]widget.Clickable
+	languageMenu, interfaceMenu, checkPort, usePort       widget.Clickable
+	interfaceOpen, languageOpen                           bool
+	host                                                  string
+	interfaces                                            []interfaceOption
+	languageOptions                                       [len(languageChoices)]widget.Clickable
+	suggestedPort                                         int
+	convertedLink, convertedINI                           string
+	editINI, probing                                      bool
+	probeResult                                           chan profileProbeResult
+	selectedProtocol                                      string
+	updates                                               updateControls
+	theme                                                 *material.Theme
+	path                                                  string
+	cfg                                                   configuration
+	session                                               proxySession
+	loadErr                                               error
+	message                                               string
+	messageError                                          bool
+	page, selected                                        int
+	rows                                                  []*widget.Clickable
+	profilesList, logsList                                widget.List
+	name, tunnel, port                                    widget.Editor
+	verbose, showTunnel                                   widget.Bool
+	tabs                                                  [3]widget.Clickable
+	add, edit, connect, check, copy, save, cancel, remove widget.Clickable
+	saveSettings, clearLogs, copyLogs                     widget.Clickable
+	editing, deleting                                     bool
 }
 
 func newDesktop(path string, pathErr error, notify func()) *desktop {
@@ -69,8 +79,10 @@ func newDesktop(path string, pathErr error, notify func()) *desktop {
 	d.session.notify = notify
 	d.profilesList.Axis, d.logsList.Axis = layout.Vertical, layout.Vertical
 	d.settingsList.Axis = layout.Vertical
+	d.profileEditorList.Axis = layout.Vertical
 	d.name.SingleLine, d.port.SingleLine = true, true
-	d.host.SingleLine, d.username.SingleLine, d.password.SingleLine, d.link.SingleLine = true, true, true, true
+	d.username.SingleLine, d.password.SingleLine = true, true
+	d.link.WrapPolicy = text.WrapGraphemes
 	d.password.Mask = '•'
 	d.port.Filter = "0123456789"
 	d.tunnel.WrapPolicy = text.WrapGraphemes
@@ -98,10 +110,12 @@ func (d *desktop) refreshRows() {
 
 func (d *desktop) loadSettings() {
 	d.port.SetText(strconv.Itoa(d.cfg.Settings.Port))
-	d.host.SetText(d.cfg.Settings.Host)
+	d.host = d.cfg.Settings.Host
 	d.username.SetText(d.cfg.Settings.Username)
 	d.password.SetText(d.cfg.Settings.Password)
-	d.ru.Value = d.cfg.Settings.Language == "ru"
+	d.auth.Value = d.cfg.Settings.Username != ""
+	d.interfaceOpen, d.languageOpen = false, false
+	d.suggestedPort = 0
 	d.verbose.Value = d.cfg.Settings.Verbose
 }
 
@@ -124,9 +138,11 @@ func (d *desktop) persist(cfg configuration) bool {
 
 func (d *desktop) beginEdit(index int) {
 	d.selected, d.editing, d.deleting = index, true, false
+	d.profileEditorList.Position = layout.Position{}
 	d.name.SetText("")
 	d.tunnel.SetText("")
 	d.link.SetText("")
+	d.convertedLink, d.convertedINI = "", ""
 	d.editINI = false
 	d.showTunnel.Value = false
 	if index >= 0 {
@@ -153,6 +169,9 @@ func (d *desktop) endEdit() {
 
 func (d *desktop) saveProfile() {
 	p := profile{Name: strings.TrimSpace(d.name.Text()), Config: d.draftConfig()}
+	if d.editINI && p.Config != "" && p.Config == strings.TrimSpace(d.convertedINI) {
+		p.Config = d.convertedLink
+	}
 	if p.Name == "" || utf8.RuneCountInString(p.Name) > 96 || p.Config == "" || len(p.Config) > maxConfigLength {
 		d.feedback("Enter a server name and a WireGuard configuration.", true)
 		return
@@ -200,7 +219,7 @@ func (d *desktop) deleteProfile() {
 }
 
 func (d *desktop) actions(gtx layout.Context, view sessionView) {
-	d.profileActions(gtx, view)
+	d.profileActions(gtx)
 	for index := range d.tabs {
 		if d.tabs[index].Clicked(gtx) && d.page != index {
 			d.page = index
@@ -241,12 +260,13 @@ func (d *desktop) actions(gtx layout.Context, view sessionView) {
 				d.deleting = true
 			}
 		}
-		if d.connect.Clicked(gtx) && d.selected >= 0 && !view.active {
-			d.connectProfile(d.cfg.Profiles[d.selected])
-		}
 	}
-	if d.stop.Clicked(gtx) {
-		d.session.stop()
+	if d.connect.Clicked(gtx) {
+		if view.active {
+			d.session.stop()
+		} else if target, ok := d.connectionTarget(); ok {
+			d.connectProfile(target)
+		}
 	}
 	if d.check.Clicked(gtx) {
 		d.session.check()
@@ -257,26 +277,8 @@ func (d *desktop) actions(gtx layout.Context, view sessionView) {
 		gtx.Execute(clipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader("socks5://" + proxyClientAddress(view.address)))})
 		d.feedback("SOCKS5 address copied.", false)
 	}
-	if d.saveSettings.Clicked(gtx) && d.page == 1 {
-		port, _ := strconv.Atoi(d.port.Text())
-		next := settings{Host: strings.Trim(strings.TrimSpace(d.host.Text()), "[]"), Port: port,
-			Username: d.username.Text(), Password: d.password.Text(), Verbose: d.verbose.Value, Language: "en"}
-		if d.ru.Value {
-			next.Language = "ru"
-		}
-		if err := next.validate(); err != nil {
-			d.feedback(err.Error(), true)
-		} else {
-			cfg := d.cfg
-			cfg.Settings = next
-			if d.persist(cfg) {
-				message := "Settings saved."
-				if view.active {
-					message = "Settings saved. Reconnect to apply them."
-				}
-				d.feedback(message, false)
-			}
-		}
+	if d.page == 1 {
+		d.settingsActions(gtx, view)
 	}
 	if d.page == 2 {
 		if d.clearLogs.Clicked(gtx) {
@@ -352,6 +354,21 @@ func (d *desktop) rawButton(click *widget.Clickable, name string, fill, ink colo
 		style := material.Button(d.theme, click, name)
 		style.Background, style.Color, style.TextSize, style.CornerRadius = fill, buttonInk, 13, 8
 		style.Inset = layout.Inset{Top: 9, Bottom: 9, Left: 15, Right: 15}
+		return style.Layout(gtx)
+	}
+}
+
+func (d *desktop) connectionButton(name string, enabled bool) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		style := material.Button(d.theme, &d.connect, d.tr(name))
+		style.Background, style.Color = accent, background
+		style.Font.Weight, style.TextSize, style.CornerRadius = font.Bold, 15, 9
+		style.Inset = layout.Inset{Top: 11, Bottom: 11, Left: 20, Right: 20}
+		gtx.Constraints.Min.X = min(gtx.Dp(138), gtx.Constraints.Max.X)
+		if !enabled {
+			gtx = gtx.Disabled()
+			style.Background, style.Color = selection, muted
+		}
 		return style.Layout(gtx)
 	}
 }
@@ -467,14 +484,17 @@ func (d *desktop) statusBar(view sessionView) layout.Widget {
 		if !pinned {
 			return layout.Dimensions{}
 		}
-		return layout.Inset{Bottom: 8}.Layout(gtx, stack(layout.Horizontal,
-			layout.Flexed(1, d.rawLabel(14, d.tr("Default server")+"  ·  "+server.Name, accent, font.Bold)),
-			layout.Rigid(d.button(&d.quickConnect, "Connect", accent, background, !view.active)),
-		))
+		return layout.Inset{Bottom: 8}.Layout(gtx, d.rawLabel(14, d.tr("Default server")+"  ·  "+server.Name, muted, font.Medium))
 	})
-	stopLabel := "Disconnect"
+	actionLabel := "Connect"
+	target, hasTarget := d.connectionTarget()
+	if view.active {
+		actionLabel = "Disconnect"
+	} else if hasTarget && status != "Proxy failed" {
+		details = target.Name + "  ·  " + d.cfg.Settings.bindAddress()
+	}
 	if status == "Stopping" {
-		stopLabel = "Disconnecting…"
+		actionLabel = "Disconnecting…"
 	}
 	return panel(surface, 12, 13, stack(layout.Vertical, pinRow, layout.Rigid(stack(layout.Horizontal,
 		layout.Flexed(1, stack(layout.Vertical,
@@ -491,7 +511,7 @@ func (d *desktop) statusBar(view sessionView) layout.Widget {
 		gap(7),
 		layout.Rigid(d.button(&d.check, checkLabel, inputFill, textColor, view.ready && !view.checking)),
 		gap(7),
-		layout.Rigid(d.button(&d.stop, stopLabel, selection, textColor, view.active && status != "Stopping")),
+		layout.Rigid(d.connectionButton(actionLabel, (view.active || hasTarget) && status != "Stopping")),
 	))))
 }
 
@@ -529,9 +549,13 @@ func (d *desktop) serversPage(gtx layout.Context, view sessionView) layout.Dimen
 			var content layout.Widget
 			switch {
 			case d.editing:
-				content = d.profileForm()
+				content = func(gtx layout.Context) layout.Dimensions {
+					return material.List(d.theme, &d.profileEditorList).Layout(gtx, 1, func(gtx layout.Context, _ int) layout.Dimensions {
+						return d.profileForm()(gtx)
+					})
+				}
 			case d.selected >= 0:
-				content = d.profileDetails(view)
+				content = d.profileDetails()
 			default:
 				content = stack(layout.Vertical,
 					layout.Rigid(d.label(22, "Add a server", textColor, font.Bold)),
@@ -562,95 +586,53 @@ func (d *desktop) profileForm() layout.Widget {
 		editor, hint = &d.tunnel, "[Interface] …"
 		linkFill, iniFill = inputFill, selection
 	}
-	probeLabel := "Check profile"
+	probeLabel := "Check connection"
 	if d.probing {
 		probeLabel = "Checking…"
 	}
 	return stack(layout.Vertical,
-		layout.Rigid(d.label(22, title, textColor, font.Bold)), gap(16),
+		layout.Rigid(stack(layout.Horizontal,
+			layout.Flexed(1, d.label(22, title, textColor, font.Bold)),
+			layout.Rigid(d.button(&d.cancel, "← Back", inputFill, textColor, true)),
+		)), gap(14),
 		layout.Rigid(d.label(13, "Server name", muted, font.Medium)), gap(5),
 		layout.Rigid(d.field(&d.name, "e.g. Home server", 20)), gap(12),
 		layout.Rigid(stack(layout.Horizontal,
 			layout.Rigid(d.button(&d.linkTab, "vpn://", linkFill, textColor, true)), gap(6),
 			layout.Rigid(d.button(&d.iniTab, "INI", iniFill, textColor, true)), gap(6),
-			layout.Rigid(d.button(&d.convert, "Convert to INI", inputFill, textColor, !d.editINI && d.link.Len() > 0)),
+			layout.Flexed(1, layout.Spacer{}.Layout),
+			layout.Rigid(d.button(&d.copyConfig, "Copy configuration", inputFill, textColor, editor.Len() > 0)),
 		)), gap(6),
-		layout.Rigid(d.field(editor, hint, 94)),
+		layout.Rigid(d.field(editor, hint, 115)),
 		layout.Rigid(material.CheckBox(d.theme, &d.showTunnel, d.tr("Show configuration")).Layout),
 		gap(9),
 		layout.Rigid(stack(layout.Horizontal,
-			layout.Rigid(d.button(&d.save, "Save server", accent, background, true)), gap(8),
-			layout.Rigid(d.button(&d.probe, probeLabel, selection, textColor, !d.probing)), gap(8),
-			layout.Rigid(d.button(&d.cancel, "Cancel", selection, textColor, true)),
+			layout.Rigid(d.button(&d.save, "Save server", selection, textColor, true)), gap(8),
+			layout.Rigid(d.button(&d.probe, probeLabel, hexColor(0x354d74), textColor, !d.probing)),
 		)),
 	)
 }
 
-func (d *desktop) profileDetails(view sessionView) layout.Widget {
+func (d *desktop) profileDetails() layout.Widget {
 	p := d.cfg.Profiles[d.selected]
 	format := "WireGuard / AmneziaWG INI"
 	if strings.HasPrefix(p.Config, "vpn://") {
 		format = "Amnezia VPN link"
 	}
-	hint := "SOCKS5  " + d.cfg.Settings.bindAddress()
-	if view.active {
-		hint = "Disconnect the current proxy before starting another server."
-	}
 	removeLabel := "Remove"
 	if d.deleting {
 		removeLabel = "Confirm removal"
 	}
-	pinLabel := "Set as default"
-	if d.cfg.DefaultProfile == p.Name {
-		pinLabel = "Clear default"
-	}
 	return stack(layout.Vertical,
 		layout.Rigid(d.rawLabel(24, p.Name, textColor, font.Bold)), gap(8),
 		layout.Rigid(d.rawLabel(14, d.tr("Protocol")+"  ·  "+d.tr(d.selectedProtocol), accent, font.Medium)), gap(7),
-		layout.Rigid(d.label(14, format, muted, font.Normal)), gap(20),
-		layout.Rigid(d.label(13, hint, muted, font.Normal)), gap(13),
+		layout.Rigid(d.label(14, format, muted, font.Normal)), gap(16),
+		layout.Rigid(material.CheckBox(d.theme, &d.pin, d.tr("Default server")).Layout), gap(18),
 		layout.Rigid(stack(layout.Horizontal,
-			layout.Rigid(d.button(&d.connect, "Connect", accent, background, !view.active)), gap(7),
 			layout.Rigid(d.button(&d.edit, "Edit", selection, textColor, true)), gap(7),
 			layout.Rigid(d.button(&d.remove, removeLabel, inputFill, warning, true)),
 		)),
-		gap(8), layout.Rigid(d.button(&d.pin, pinLabel, selection, textColor, true)),
 	)
-}
-
-func (d *desktop) settingsPage(gtx layout.Context) layout.Dimensions {
-	gtx.Constraints.Min = gtx.Constraints.Max
-	field := func(label, hint string, editor *widget.Editor) layout.Widget {
-		return stack(layout.Vertical,
-			layout.Rigid(d.label(13, label, muted, font.Medium)), gap(5),
-			layout.Rigid(d.field(editor, hint, 20)),
-		)
-	}
-	rows := []layout.Widget{
-		d.label(22, "Proxy settings", textColor, font.Bold),
-		stack(layout.Horizontal,
-			layout.Flexed(2, field("SOCKS5 listen address", "127.0.0.1", &d.host)), gap(12),
-			layout.Flexed(1, field("SOCKS5 port", "1080", &d.port)),
-		),
-		d.label(13, "Use 0.0.0.0 for all IPv4 interfaces or :: for IPv6.", muted, font.Normal),
-		stack(layout.Horizontal,
-			layout.Flexed(1, field("SOCKS5 username", "Optional", &d.username)), gap(12),
-			layout.Flexed(1, field("SOCKS5 password", "Optional", &d.password)),
-		),
-		material.CheckBox(d.theme, &d.verbose, d.tr("Verbose WireGuard logs")).Layout,
-		material.CheckBox(d.theme, &d.ru, "Русский интерфейс / Russian UI").Layout,
-		d.button(&d.saveSettings, "Save settings", accent, background, true),
-		stack(layout.Vertical,
-			layout.Rigid(d.label(13, "Profiles file", muted, font.Medium)), gap(5),
-			layout.Rigid(d.rawLabel(13, d.path, textColor, font.Normal)),
-		),
-		d.updates.layout(d),
-	}
-	return panel(surface, 12, 20, func(gtx layout.Context) layout.Dimensions {
-		return material.List(d.theme, &d.settingsList).Layout(gtx, len(rows), func(gtx layout.Context, index int) layout.Dimensions {
-			return layout.Inset{Bottom: 10, Right: 5}.Layout(gtx, rows[index])
-		})
-	})(gtx)
 }
 
 func (d *desktop) logsPage(gtx layout.Context, view sessionView) layout.Dimensions {

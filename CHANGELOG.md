@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.4.0
+
+- A single Connect / Disconnect control follows the current session state.
+- Profile editing wraps Amnezia links, copies either format, and converts to INI on tab switch.
+- Proxy, language, and update settings now have separate tabs.
+- The proxy settings list local interfaces, check bind availability, and suggest a port when the chosen one is busy.
+- The updates tab shows release notes and links to GitHub Releases.
+
 ## v0.3.0
 
 - Close the window to the system tray with SOCKS5 disconnected.

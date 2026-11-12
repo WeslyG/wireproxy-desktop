@@ -9,10 +9,12 @@ administrator privileges, a separate wireproxy executable, or an installer.
 
 1. Under **Servers**, click **Add**, enter a name, and paste the entire
    `vpn://` link or the contents of an AmneziaWG or WireGuard INI file.
-   **Check profile** tries an HTTPS request through the draft tunnel before
-   saving. **Convert to INI** opens the decoded configuration in the INI tab.
-2. Save and click **Connect**. Select **Set as default** to pin the server
-   and its Connect button above the list. Set your browser or other client to
+   **Check connection** tries an HTTPS request through the draft tunnel.
+   Switching from a pasted link to **INI** decodes it. Use **Copy configuration**
+   to copy the current format.
+2. Save and use **Connect** in the top bar. Check **Default server** to pin the
+   profile and make it available for quick connection from other pages.
+   Set your browser or other client to
    `socks5://127.0.0.1:1080`, or use **Copy address**.
 3. Click **Test SOCKS5** to send an HTTPS request through the tunnel to
    `example.com`. **Logs** shows the handshake, WireGuard engine messages,
@@ -20,9 +22,11 @@ administrator privileges, a separate wireproxy executable, or an installer.
    retries, and device events. The protocol label is inferred from the profile.
 4. Disconnect and select another saved profile to switch servers.
 
-**Settings** has English and Russian, a SOCKS5 listen address and port, and
-optional username/password authentication. Enter `0.0.0.0` for all IPv4
-interfaces or `::` for IPv6. Proxy settings apply on the next connection.
+**Settings → Proxy** lists local network addresses and wildcard listeners.
+**Check port** tests the selected address and suggests an alternative when
+the requested port is occupied. Enable **Use SOCKS5 authentication** to enter
+a username and password. Proxy settings apply on the next connection.
+Choose English or Russian in **Settings → Language**.
 When importing INI, the app uses
 `[Interface]` and `[Peer]` for the tunnel. The GUI supplies the SOCKS5 listener.
 
@@ -42,8 +46,8 @@ if a tray host is unavailable.
 ## Updates and releases
 
 Tagged builds check GitHub for a newer stable release when the app opens.
-Open **Settings → App updates** to check again or choose **Install and
-restart**. The app downloads the binary for the current OS and architecture,
+Open **Settings → Updates** to see what changed, open the release on GitHub,
+check again, or choose **Install and restart**. The app downloads the binary for the current OS and architecture,
 verifies its SHA-256 digest, then disconnects the proxy and restarts. The
 executable directory must be writable. Your profile file stays in place.
 

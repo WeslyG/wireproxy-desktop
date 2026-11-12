@@ -4,7 +4,9 @@ import (
 	"context"
 	"io"
 	"os"
+	"os/exec"
 	"runtime"
+	"strings"
 	"time"
 
 	"gioui.org/app"
@@ -21,15 +23,15 @@ type updateResult struct {
 }
 
 type updateControls struct {
-	window         *app.Window
-	notify         func()
-	results        chan updateResult
-	check, install widget.Clickable
-	release        *desktopRelease
-	status         string
-	busy, portable bool
-	helper         io.WriteCloser
-	cancelDownload context.CancelFunc
+	window                      *app.Window
+	notify                      func()
+	results                     chan updateResult
+	check, install, openRelease widget.Clickable
+	release                     *desktopRelease
+	status                      string
+	busy, portable              bool
+	helper                      io.WriteCloser
+	cancelDownload              context.CancelFunc
 }
 
 func (u *updateControls) init(notify func(), portable bool) {
@@ -82,6 +84,9 @@ func (u *updateControls) update(gtx layout.Context) {
 		switch {
 		case result.err != nil:
 			u.status = result.err.Error()
+			if result.release != nil {
+				u.release = result.release
+			}
 		case result.staged != "":
 			helper, err := startUpdateHelper(result.target, result.staged, result.digest, u.portable)
 			if err != nil {
@@ -93,7 +98,10 @@ func (u *updateControls) update(gtx layout.Context) {
 			u.window.Perform(system.ActionClose)
 		case result.release != nil:
 			u.release = result.release
-			u.status = ""
+			u.status = "No newer release found."
+			if u.available() {
+				u.status = ""
+			}
 		default:
 			u.release = nil
 			u.status = "No newer release found."
@@ -103,9 +111,40 @@ func (u *updateControls) update(gtx layout.Context) {
 	if u.check.Clicked(gtx) && !u.busy {
 		u.checkRelease()
 	}
-	if u.install.Clicked(gtx) && !u.busy && u.release != nil {
+	if u.install.Clicked(gtx) && !u.busy && u.available() {
 		u.download()
 	}
+	if u.openRelease.Clicked(gtx) {
+		if err := openReleasePage(u.release); err != nil {
+			u.status = err.Error()
+		}
+	}
+}
+
+func (u *updateControls) available() bool {
+	return u.release != nil && u.release.Asset.Name != "" && isNewer(u.release.Tag, version)
+}
+
+func openReleasePage(release *desktopRelease) error {
+	url := "https://github.com/WeslyG/wireproxy-desktop/releases"
+	if release != nil {
+		if _, ok := stableVersion(release.Tag); ok {
+			url += "/tag/" + release.Tag
+		}
+	}
+	command := exec.Command("xdg-open", url)
+	switch runtime.GOOS {
+	case "darwin":
+		command = exec.Command("open", url)
+	case "windows":
+		command = exec.Command("rundll32.exe", "url.dll,FileProtocolHandler", url)
+		hideWorkerWindow(command)
+	}
+	if err := command.Start(); err != nil {
+		return err
+	}
+	go command.Wait()
+	return nil
 }
 
 func (u *updateControls) shutdown() {
@@ -124,18 +163,28 @@ func (u *updateControls) shutdown() {
 func (u *updateControls) layout(d *desktop) layout.Widget {
 	_, released := stableVersion(version)
 	status := d.tr(u.status)
-	if u.release != nil && status == "" {
+	if u.available() && status == "" {
 		status = d.tr("Available version") + " " + u.release.Tag + ". " + d.tr("Installing restarts Wireproxy and disconnects the proxy.")
 	}
-	return stack(layout.Vertical,
+	rows := []layout.FlexChild{
 		layout.Rigid(d.rawLabel(13, d.tr("App updates")+"  ·  "+version, textColor, font.Bold)),
 		gap(5),
-		layout.Rigid(d.label(13, u.status, muted, font.Normal)),
+		layout.Rigid(d.rawLabel(13, status, muted, font.Normal)),
 		gap(8),
 		layout.Rigid(stack(layout.Horizontal,
 			layout.Rigid(d.button(&u.check, "Check for updates", selection, textColor, released && !u.busy)),
 			gap(7),
-			layout.Rigid(d.button(&u.install, "Install and restart", accent, background, !u.busy && u.release != nil)),
+			layout.Rigid(d.button(&u.install, "Install and restart", selection, textColor, !u.busy && u.available())), gap(7),
+			layout.Rigid(d.button(&u.openRelease, "Open release on GitHub", inputFill, textColor, true)),
 		)),
-	)
+	}
+	if u.release != nil && strings.TrimSpace(u.release.Notes) != "" {
+		notes := []rune(strings.TrimSpace(u.release.Notes))
+		if len(notes) > 12000 {
+			notes = append(notes[:12000], '…')
+		}
+		rows = append(rows, gap(16), layout.Rigid(d.label(17, "What's new", textColor, font.Bold)),
+			gap(6), layout.Rigid(d.rawLabel(14, string(notes), muted, font.Normal)))
+	}
+	return stack(layout.Vertical, rows...)
 }
