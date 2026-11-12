@@ -1,0 +1,57 @@
+name: Build desktop binaries
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            target: windows-amd64
+          - runner: ubuntu-24.04
+            target: linux-amd64
+          - runner: macos-15-intel
+            target: macos-amd64
+          - runner: macos-15
+            target: macos-arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Install Linux graphics headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libegl1-mesa-dev libgles2-mesa-dev libxcursor-dev libxfixes-dev
+      - name: Test and build
+        shell: bash
+        run: |
+          mkdir -p dist
+          case "${{ runner.os }}" in
+            Windows)
+              export CGO_ENABLED=0
+              go test ./...
+              go build -trimpath -ldflags="-s -w -H=windowsgui" -o "dist/wireproxy-desktop-${{ matrix.target }}.exe" .
+              ;;
+            Linux)
+              export CGO_ENABLED=1
+              go test -tags novulkan ./...
+              go build -tags novulkan -trimpath -ldflags="-s -w" -o "dist/wireproxy-desktop-${{ matrix.target }}" .
+              ;;
+            macOS)
+              export CGO_ENABLED=1
+              go test ./...
+              go build -trimpath -ldflags="-s -w" -o "dist/wireproxy-desktop-${{ matrix.target }}" .
+              ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wireproxy-desktop-${{ matrix.target }}
+          path: dist/*
