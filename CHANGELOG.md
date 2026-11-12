@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.3.0
+
+- Close the window to the system tray with SOCKS5 disconnected.
+- Reopen the window or quit from the tray on Windows, macOS, and Linux desktops with a tray host.
+- Added a favicon, Windows executable icon, macOS Dock icon, and tray icons.
+
 ## v0.2.0
 
 - Added Russian and English UI, draft tunnel checks, Amnezia-to-INI conversion, and protocol labels.

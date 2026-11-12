@@ -8,7 +8,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"gioui.org/app"
 	"gioui.org/font"
 	"gioui.org/font/gofont"
 	"gioui.org/io/clipboard"
@@ -34,7 +33,6 @@ var (
 )
 
 type desktop struct {
-	window                                                      *app.Window
 	settingsList                                                widget.List
 	host, username, password, link                              widget.Editor
 	ru                                                          widget.Bool
@@ -61,14 +59,14 @@ type desktop struct {
 	editing, deleting                                           bool
 }
 
-func newDesktop(window *app.Window, path string, pathErr error) *desktop {
-	d := &desktop{window: window, theme: material.NewTheme(), path: path, selected: -1, loadErr: pathErr,
+func newDesktop(path string, pathErr error, notify func()) *desktop {
+	d := &desktop{theme: material.NewTheme(), path: path, selected: -1, loadErr: pathErr,
 		probeResult: make(chan profileProbeResult, 1)}
 	d.theme.Shaper = text.NewShaper(text.WithCollection(gofont.Collection()))
 	d.theme.Palette = material.Palette{
 		Bg: background, Fg: textColor, ContrastBg: accent, ContrastFg: background,
 	}
-	d.session.notify = window.Invalidate
+	d.session.notify = notify
 	d.profilesList.Axis, d.logsList.Axis = layout.Vertical, layout.Vertical
 	d.settingsList.Axis = layout.Vertical
 	d.name.SingleLine, d.port.SingleLine = true, true

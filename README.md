@@ -32,6 +32,13 @@ launch it with `--portable`. Private keys and SOCKS5 credentials are stored as
 plain JSON under your user account. Keep the profile file private when copying
 or backing up the executable. The activity log stays in memory.
 
+Closing the window stops SOCKS5 and leaves Wireproxy Desktop in the system
+tray. Use **Open Wireproxy Desktop** to reopen the window or **Quit** to exit.
+Reopening leaves SOCKS5 disconnected until you click **Connect**. On Linux,
+the tray requires a StatusNotifier host, such as KDE Plasma's system tray
+or GNOME with an AppIndicator extension. Closing the window exits the app
+if a tray host is unavailable.
+
 ## Updates and releases
 
 Tagged builds check GitHub for a newer stable release when the app opens.

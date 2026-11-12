@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"gioui.org/app"
+	"gioui.org/io/system"
 	"gioui.org/op"
 	"gioui.org/widget"
 )
@@ -36,46 +37,83 @@ func main() {
 		}
 	}
 
+	tray := newDesktopTray()
 	go func() {
-		window := new(app.Window)
-		window.Option(app.Title("Wireproxy Desktop"), app.Decorated(false), app.Size(1020, 720), app.MinSize(760, 630))
-		portable := slices.Contains(args, "--portable")
-		path, err := configPath(portable)
-		ui := newDesktop(window, path, err)
-		ui.updates.init(window, portable)
-		if slices.Contains(args, "--update-error") {
-			ui.feedback("Update installation failed. The previous version is still available.", true)
+		err := runDesktop(args, tray)
+		tray.close()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
 		}
-		customTitle := true
-		var decoration widget.Decorations
-		var ops op.Ops
-		for {
-			switch event := window.Event().(type) {
-			case app.ConfigEvent:
-				customTitle = !event.Config.Decorated
-				decoration.Maximized = event.Config.Mode == app.Maximized
-			case app.FrameEvent:
-				gtx := app.NewContext(&ops, event)
-				if customTitle {
-					if actions := decoration.Update(gtx); actions != 0 {
-						window.Perform(actions)
-					}
-				}
-				ui.updates.update(gtx)
-				ui.layoutWindow(gtx, &decoration, customTitle)
-				event.Frame(gtx.Ops)
-			case app.DestroyEvent:
-				if done := ui.session.stop(); done != nil {
-					<-done
-				}
-				ui.updates.shutdown()
-				if event.Err != nil {
-					fmt.Fprintln(os.Stderr, event.Err)
-					os.Exit(1)
-				}
-				os.Exit(0)
-			}
-		}
+		os.Exit(0)
 	}()
 	app.Main()
+}
+
+func runDesktop(args []string, tray *desktopTray) error {
+	portable := slices.Contains(args, "--portable")
+	path, err := configPath(portable)
+	ui := newDesktop(path, err, tray.invalidate)
+	ui.updates.init(tray.invalidate, portable)
+	defer ui.updates.shutdown()
+	if slices.Contains(args, "--update-error") {
+		ui.feedback("Update installation failed. The previous version is still available.", true)
+	}
+	for !tray.quitting.Load() {
+		background, err := runWindow(ui, tray)
+		if done := ui.session.stop(); done != nil {
+			<-done
+		}
+		tray.update(ui, false)
+		if err != nil || !background || tray.quitting.Load() || !tray.awaitWindow() {
+			return err
+		}
+	}
+	return nil
+}
+
+func runWindow(ui *desktop, tray *desktopTray) (bool, error) {
+	window := new(app.Window)
+	window.Option(app.Title("Wireproxy Desktop"), app.Decorated(false), app.Size(1020, 720), app.MinSize(760, 630))
+	ui.updates.window = window
+	tray.window.Store(window)
+	defer tray.window.Store(nil)
+	customTitle, background := true, false
+	var decoration widget.Decorations
+	var ops op.Ops
+	for {
+		switch event := window.Event().(type) {
+		case app.ConfigEvent:
+			customTitle = !event.Config.Decorated
+			decoration.Maximized = event.Config.Mode == app.Maximized
+		case *app.ClosingEvent:
+			background = !tray.quitting.Load() && ui.updates.helper == nil && tray.available()
+			ui.session.stop()
+		case app.FrameEvent:
+			gtx := app.NewContext(&ops, event)
+			actions := system.Action(0)
+			if customTitle {
+				actions = decoration.Update(gtx)
+			}
+			select {
+			case <-tray.wake:
+				actions |= system.ActionRaise
+			default:
+			}
+			if tray.quitting.Load() {
+				actions = system.ActionClose
+			}
+			if actions != 0 {
+				window.Perform(actions)
+			}
+			ui.updates.update(gtx)
+			ui.layoutWindow(gtx, &decoration, customTitle)
+			event.Frame(gtx.Ops)
+			tray.update(ui, ui.session.view(false).ready)
+		case app.DestroyEvent:
+			return background, event.Err
+		default:
+			setWindowIcon(event)
+		}
+	}
 }

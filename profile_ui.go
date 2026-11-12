@@ -96,7 +96,7 @@ func (d *desktop) profileActions(gtx layout.Context, view sessionView) {
 		go func() {
 			protocol, err := probeProfile(config)
 			d.probeResult <- profileProbeResult{config, protocol, err}
-			d.window.Invalidate()
+			d.session.notify()
 		}()
 	}
 }

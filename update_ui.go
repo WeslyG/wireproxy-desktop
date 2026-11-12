@@ -22,6 +22,7 @@ type updateResult struct {
 
 type updateControls struct {
 	window         *app.Window
+	notify         func()
 	results        chan updateResult
 	check, install widget.Clickable
 	release        *desktopRelease
@@ -31,8 +32,8 @@ type updateControls struct {
 	cancelDownload context.CancelFunc
 }
 
-func (u *updateControls) init(window *app.Window, portable bool) {
-	u.window, u.portable = window, portable
+func (u *updateControls) init(notify func(), portable bool) {
+	u.notify, u.portable = notify, portable
 	u.results = make(chan updateResult, 1)
 	if _, ok := stableVersion(version); ok {
 		u.checkRelease()
@@ -43,7 +44,7 @@ func (u *updateControls) init(window *app.Window, portable bool) {
 
 func (u *updateControls) submit(result updateResult) {
 	u.results <- result
-	u.window.Invalidate()
+	u.notify()
 }
 
 func (u *updateControls) checkRelease() {
