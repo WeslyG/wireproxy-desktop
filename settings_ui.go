@@ -23,6 +23,7 @@ type interfaceOption struct {
 }
 
 var languageChoices = [...]struct{ code, name string }{
+	{"system", "System language"},
 	{"en", "English"},
 	{"ru", "Русский"},
 }
@@ -81,6 +82,7 @@ func (d *desktop) settingsActions(gtx layout.Context, view sessionView) {
 			if d.languageOptions[index].Clicked(gtx) {
 				cfg := d.cfg
 				cfg.Settings.Language = choice.code
+				cfg.Settings.LanguageOverride = choice.code != "system"
 				d.persist(cfg, func(err error) {
 					if err == nil {
 						d.languageOpen = false
@@ -124,7 +126,9 @@ func (d *desktop) settingsActions(gtx layout.Context, view sessionView) {
 	}
 	if d.saveSettings.Clicked(gtx) {
 		port, _ := strconv.Atoi(d.port.Text())
-		next := settings{Host: d.host, Port: port, Verbose: d.verbose.Value, Language: d.cfg.Settings.Language}
+		next := d.cfg.Settings
+		next.Host, next.Port, next.Verbose = d.host, port, d.verbose.Value
+		next.Username, next.Password = "", ""
 		if d.auth.Value {
 			next.Username, next.Password = d.username.Text(), d.password.Text()
 			if next.Username == "" || next.Password == "" {
@@ -337,14 +341,14 @@ func selectGlyph(gtx layout.Context, check, visible bool) layout.Dimensions {
 }
 
 func (d *desktop) languageSettings(gtx layout.Context) layout.Dimensions {
-	selected := languageChoices[0].name
+	selected := d.tr(languageChoices[0].name)
 	options := make([]selectOption, 0, len(languageChoices))
 	for index, choice := range languageChoices {
-		current := choice.code == d.cfg.Settings.Language
+		current := choice.code == d.cfg.Settings.Language || (choice.code == "system" && d.cfg.Settings.Language == "")
 		if current {
-			selected = choice.name
+			selected = d.tr(choice.name)
 		}
-		options = append(options, selectOption{title: choice.name, selected: current, click: &d.languageOptions[index]})
+		options = append(options, selectOption{title: d.tr(choice.name), selected: current, click: &d.languageOptions[index]})
 	}
 	gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(390))
 	gtx.Constraints.Min.X = 0

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"fyne.io/systray"
+	"gioui.org/app"
 	"github.com/godbus/dbus/v5"
 )
 
@@ -33,4 +34,4 @@ func startNativeTray(ready, exited func()) func() {
 	return systray.Quit
 }
 
-func setWindowIcon(event any) {}
+func configureNativeWindow(*app.Window, any) {}

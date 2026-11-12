@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -208,7 +209,7 @@ func (s *proxySession) check() bool {
 	}
 	generation, options := s.checkGeneration, s.options
 	s.checking = true
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 9*time.Second)
 	s.checkCancel = cancel
 	s.logLocked("Checking HTTPS through SOCKS5")
 	go func() {
@@ -248,18 +249,45 @@ func checkHTTPS(ctx context.Context, options settings) (string, error) {
 	}
 	transport := &http.Transport{DialContext: dialer.(proxy.ContextDialer).DialContext}
 	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com/", nil)
-	if err != nil {
+	client := &http.Client{
+		Transport:     transport,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	return checkHTTPSEndpoints(ctx, client)
+}
+
+func checkHTTPSEndpoints(ctx context.Context, client *http.Client) (string, error) {
+	var failures []error
+	for _, endpoint := range []struct {
+		url    string
+		status int
+	}{
+		{"https://example.com/", http.StatusOK},
+		{"https://www.gstatic.com/generate_204", http.StatusNoContent},
+	} {
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		attempt, cancel := context.WithTimeout(ctx, 4*time.Second)
+		req, err := http.NewRequestWithContext(attempt, http.MethodGet, endpoint.url, nil)
+		if err != nil {
+			cancel()
+			return "", err
+		}
+		resp, err := client.Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+			if resp.StatusCode == endpoint.status {
+				cancel()
+				return resp.Status, nil
+			}
+			err = fmt.Errorf("HTTP %s", resp.Status)
+		}
+		cancel()
+		failures = append(failures, fmt.Errorf("%s: %w", req.URL.Host, err))
+	}
+	if err := ctx.Err(); err != nil {
 		return "", err
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return "", err
-	}
-	_ = resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("HTTP %s", resp.Status)
-	}
-	return resp.Status, nil
+	return "", errors.Join(failures...)
 }

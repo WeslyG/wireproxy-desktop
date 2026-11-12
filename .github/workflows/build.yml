@@ -72,11 +72,15 @@ jobs:
               ;;
             macOS)
               export CGO_ENABLED=1
+              export MACOSX_DEPLOYMENT_TARGET=15.0
               go test ./...
               output="dist/wireproxy-desktop-${{ matrix.target }}"
               go build -trimpath -ldflags="$flags" -o "$output" .
               codesign --force --sign - "$output"
               codesign --verify "$output"
+              bundle="$RUNNER_TEMP/Wireproxy Desktop.app"
+              sh scripts/build-macos-app.sh "$bundle" "$output"
+              ditto -c -k --keepParent "$bundle" "$output.zip"
               ;;
           esac
       - uses: actions/upload-artifact@v4

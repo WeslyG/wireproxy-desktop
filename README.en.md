@@ -6,6 +6,13 @@
 
 ![Wireproxy Desktop showing demo servers, the default profile, and the Connect button](assets/screenshot-en.jpg)
 
+- **Local SOCKS5 with WireGuard v1 and AmneziaWG 3.1 support.** AmneziaWG 1.0, 1.5, 2.0, and 3.0 profiles are also supported. Configure the listen address and port, and enable username and password authentication if needed.
+- **Configuration import and conversion.** Import `vpn://` links and `.conf` files, convert `vpn://` links to INI, and copy the result. Select a default server for quick access.
+- **Background operation.** When a system tray is available, closing the window keeps the connection running. The tray icon shows the proxy status and lets you reopen the window.
+- **Connection diagnostics.** Test profiles and the running SOCKS5 proxy over HTTPS. The SOCKS5 test tries a fallback site if the primary one fails. Tunnel events appear in the log.
+- **Protected storage.** The OS credential store holds profiles, keys, and the SOCKS5 password. No analytics or automatic log uploads.
+- **Windows, macOS, and Linux.** x64 and ARM64 builds with English and Russian interfaces that follow the system language by default.
+
 ## Download
 
 [Latest release](https://github.com/WeslyG/wireproxy-desktop/releases/latest) · [All releases](https://github.com/WeslyG/wireproxy-desktop/releases) · [SHA256SUMS](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/SHA256SUMS)
@@ -13,7 +20,7 @@
 | Platform | x64 | ARM64 |
 | --- | --- | --- |
 | Windows | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-amd64.exe) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-arm64.exe) |
-| macOS | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64) |
+| macOS | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64.zip) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64.zip) |
 | Linux | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
 
 ## System requirements
@@ -23,12 +30,20 @@ The prebuilt binary runs under a regular user account. It requires no installer,
 | OS | Target environment | What you need to run it |
 | --- | --- | --- |
 | Windows | Windows 11, x64 or ARM64 | Open the downloaded `.exe`. No additional components are required. |
-| macOS | macOS 15, Intel or Apple Silicon | Launch the binary from Terminal if Gatekeeper policy allows it. The built-in Keychain stores profiles. |
+| macOS | macOS 15 Sequoia or later, Intel or Apple Silicon | Extract the ZIP and open Wireproxy Desktop.app in Finder. The built-in Keychain stores profiles. |
 | Linux | Ubuntu 24.04 Desktop, x64 or ARM64 | An X11 or Wayland desktop session with EGL/OpenGL ES libraries and an available Secret Service. If your desktop lacks one, install GNOME Keyring or enable a compatible KWallet service. The tray requires a StatusNotifier host. |
 
-The table lists the [build targets](.github/workflows/build.yml). Other Linux distributions need compatible system libraries. On macOS and Linux, you may need to make the downloaded file executable. For example, on Linux x64 run `chmod +x ./wireproxy-desktop-linux-amd64`, then `./wireproxy-desktop-linux-amd64`.
+The table lists the [build targets](.github/workflows/build.yml). Other Linux distributions need compatible system libraries. On Linux, you may need to make the downloaded file executable. For example, on Linux x64 run `chmod +x ./wireproxy-desktop-linux-amd64`, then `./wireproxy-desktop-linux-amd64`.
 
-macOS builds use ad hoc signing. They have no Developer ID signature or Apple notarization, so Gatekeeper may block the downloaded binary on first launch. [Apple’s distribution requirements](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+### First launch on macOS
+
+1. Open ** → About This Mac**. Confirm that you have macOS 15 Sequoia or later. Download the **ARM64** ZIP for Apple Silicon or the **x64** ZIP for Intel.
+2. Download the ZIP from [GitHub Releases](https://github.com/WeslyG/wireproxy-desktop/releases/latest) and compare its SHA-256 digest with the matching line in `SHA256SUMS`. Extract the ZIP, move **Wireproxy Desktop.app** to **Applications**, and double-click it.
+3. The app has an ad hoc signature. It has no Developer ID signature or Apple notarization. If macOS says it cannot verify the app or its developer, dismiss the warning and open **System Settings → Privacy & Security**. Scroll to **Security** and click **Open Anyway** next to the message about Wireproxy Desktop. The button is available for about an hour after a launch attempt. If it is missing, try opening the app in Finder again.
+4. Confirm that you want to open the app and enter your Mac login password if prompted. macOS remembers the exception for this app. [Apple’s instructions](https://support.apple.com/en-us/102445)
+5. Read the app’s Keychain explanation and click **Continue**. Wireproxy Desktop uses its own entry to store profiles and proxy settings.
+
+If macOS reports that the app is damaged or will damage your computer, stop and verify the source and the ZIP’s checksum. [macOS alerts](https://support.apple.com/en-us/102445)
 
 ## Connect
 
@@ -60,7 +75,7 @@ Release builds check GitHub Releases at startup. Open **Settings → Updates** t
 
 ## Privacy
 
-**No analytics, telemetry, tracking, or automatic log uploads.** Logs stay in memory. Update checks contact GitHub, and diagnostics you start send an HTTPS request to `example.com` through the tunnel being tested.
+**No analytics, telemetry, tracking, or automatic log uploads.** Logs stay in memory. Update checks contact GitHub, and diagnostics you start send an HTTPS request to `example.com` through the tunnel being tested and fall back to `www.gstatic.com`.
 
 ## Stack and build
 
@@ -71,7 +86,7 @@ For development, install Docker and the **Dev Containers** extension in VS Code,
 | Platform | Command |
 | --- | --- |
 | Windows | `go build -trimpath -ldflags="-s -w -H=windowsgui" -o wireproxy-desktop.exe .` |
-| macOS | `CGO_ENABLED=1 go build -trimpath -o wireproxy-desktop .` |
+| macOS | `sh scripts/build-macos-app.sh "Wireproxy Desktop.app"` |
 | Linux | `CGO_ENABLED=1 go build -tags novulkan -trimpath -o wireproxy-desktop .` |
 
-Building on macOS requires Xcode Command Line Tools. Building on Linux requires a C compiler, `pkg-config`, and the [Gio development packages](https://gioui.org/doc/install/linux). Closing the window stops the proxy and leaves the app in the background where a tray is available. Listener changes take effect on the next connection.
+Building on macOS requires Xcode Command Line Tools. Building on Linux requires a C compiler, `pkg-config`, and the [Gio development packages](https://gioui.org/doc/install/linux). Where a system tray is available, closing the window keeps the app and proxy running in the background. Disconnect in the app or quit from the tray to stop the proxy. Listener changes take effect on the next connection.

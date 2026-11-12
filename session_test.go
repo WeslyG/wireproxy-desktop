@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -51,5 +54,31 @@ func TestSOCKS5CheckCancelsStalledHandshake(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("SOCKS5 check is still waiting for the proxy")
+	}
+}
+
+type socksTestTransport func(*http.Request) (*http.Response, error)
+
+func (transport socksTestTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	return transport(request)
+}
+
+func TestSOCKS5CheckUsesFallbackAfterHTTPError(t *testing.T) {
+	var hosts []string
+	client := &http.Client{Transport: socksTestTransport(func(request *http.Request) (*http.Response, error) {
+		hosts = append(hosts, request.URL.Host)
+		code := http.StatusServiceUnavailable
+		if request.URL.Host == "www.gstatic.com" {
+			code = http.StatusNoContent
+		}
+		return &http.Response{
+			StatusCode: code, Status: http.StatusText(code),
+			Body: io.NopCloser(strings.NewReader("")),
+		}, nil
+	})}
+	status, err := checkHTTPSEndpoints(context.Background(), client)
+	if err != nil || status != http.StatusText(http.StatusNoContent) ||
+		strings.Join(hosts, ",") != "example.com,www.gstatic.com" {
+		t.Fatalf("status = %q, error = %v, hosts = %v", status, err, hosts)
 	}
 }

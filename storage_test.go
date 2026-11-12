@@ -44,3 +44,24 @@ func TestConfigMigrationVerifiesBeforeRemovingJSON(t *testing.T) {
 		})
 	}
 }
+
+func TestDecodeConfigMigratesLegacyEnglishDefault(t *testing.T) {
+	for _, test := range []struct {
+		name, data, language string
+	}{
+		{"missing", `{}`, "system"},
+		{"legacy English default", `{"settings":{"language":"en"}}`, "system"},
+		{"explicit English", `{"settings":{"language":"en","languageOverride":true}}`, "en"},
+		{"legacy Russian selection", `{"settings":{"language":"ru"}}`, "ru"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg, err := decodeConfig([]byte(test.data))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.Settings.Language != test.language {
+				t.Fatalf("language = %q, want %q", cfg.Settings.Language, test.language)
+			}
+		})
+	}
+}

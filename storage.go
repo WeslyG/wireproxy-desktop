@@ -18,12 +18,13 @@ type profile struct {
 }
 
 type settings struct {
-	Host     string `json:"host"`
-	Username string `json:"username,omitempty"`
-	Password string `json:"password,omitempty"`
-	Language string `json:"language"`
-	Port     int    `json:"port"`
-	Verbose  bool   `json:"verbose"`
+	Host             string `json:"host"`
+	Username         string `json:"username,omitempty"`
+	Password         string `json:"password,omitempty"`
+	Language         string `json:"language"`
+	LanguageOverride bool   `json:"languageOverride,omitempty"`
+	Port             int    `json:"port"`
+	Verbose          bool   `json:"verbose"`
 }
 
 type configuration struct {
@@ -60,13 +61,18 @@ func openConfigStore(portable bool) (configStore, error) {
 }
 
 func defaultConfig() configuration {
-	return configuration{Settings: settings{Host: "127.0.0.1", Port: 1080, Language: "en", Verbose: true}}
+	return configuration{Settings: settings{Host: "127.0.0.1", Port: 1080, Language: "system", Verbose: true}}
 }
 
 func decodeConfig(data []byte) (configuration, error) {
 	cfg := defaultConfig()
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return cfg, errors.New("the saved configuration contains invalid JSON")
+	}
+	// Older versions saved English as the default, even when the user
+	// had never selected an interface language.
+	if cfg.Settings.Language == "en" && !cfg.Settings.LanguageOverride {
+		cfg.Settings.Language = "system"
 	}
 	if err := cfg.Settings.validate(); err != nil {
 		return cfg, err

@@ -6,6 +6,13 @@
 
 ![Wireproxy Desktop со списком демонстрационных серверов, основным профилем и кнопкой подключения](assets/screenshot.jpg)
 
+- **Локальный SOCKS5 с поддержкой WireGuard v1 и AmneziaWG 3.1.** Также поддерживаются профили AmneziaWG 1.0, 1.5, 2.0 и 3.0. Адрес и порт прокси настраиваются, при необходимости можно включить вход по логину и паролю.
+- **Импорт и конвертация конфигураций.** Импортируйте ссылки `vpn://` и файлы `.conf`, конвертируйте ссылки `vpn://` в INI и копируйте результат. Выберите основной сервер для быстрого подключения.
+- **Работа в фоне.** При наличии системного трея закрытие окна сохраняет соединение. Значок показывает состояние прокси и позволяет снова открыть окно.
+- **Диагностика соединения.** Проверяйте профили и рабочий SOCKS5 через HTTPS. При сбое основного сайта тест SOCKS5 пробует резервный. События туннеля видны в журнале.
+- **Защищённое хранение.** Профили, ключи и пароль SOCKS5 хранятся в системном хранилище. Аналитики и автоматической отправки журналов нет.
+- **Windows, macOS и Linux.** Сборки для x64 и ARM64, русский и английский интерфейс с автоматическим выбором по языку системы.
+
 ## Скачать
 
 [Последний релиз](https://github.com/WeslyG/wireproxy-desktop/releases/latest) · [Все релизы](https://github.com/WeslyG/wireproxy-desktop/releases) · [SHA256SUMS](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/SHA256SUMS)
@@ -13,7 +20,7 @@
 | Система | x64 | ARM64 |
 | --- | --- | --- |
 | Windows | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-amd64.exe) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-arm64.exe) |
-| macOS | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64) |
+| macOS | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64.zip) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64.zip) |
 | Linux | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
 
 ## Системные требования
@@ -23,12 +30,20 @@
 | ОС | Целевая среда | Что нужно для запуска |
 | --- | --- | --- |
 | Windows | Windows 11, x64 или ARM64 | Запустите скачанный `.exe`. Дополнительных компонентов нет. |
-| macOS | macOS 15, Intel или Apple Silicon | Бинарник запускается из Терминала, если политика Gatekeeper разрешает запуск. Для хранения профилей используется встроенная связка ключей. |
+| macOS | macOS 15 Sequoia или новее, Intel или Apple Silicon | Распакуйте ZIP и откройте Wireproxy Desktop.app в Finder. Для хранения профилей используется встроенная связка ключей. |
 | Linux | Ubuntu 24.04 Desktop, x64 или ARM64 | Нужна графическая сессия X11 или Wayland с системными библиотеками EGL/OpenGL ES и доступное хранилище Secret Service. Если в вашей среде его нет, установите GNOME Keyring или включите совместимый сервис KWallet. Для трея нужен StatusNotifier-хост. |
 
-Таблица указывает [целевые среды сборки](.github/workflows/build.yml). На других дистрибутивах Linux нужны совместимые системные библиотеки. На macOS и Linux скачанному файлу может потребоваться право на выполнение. Например, для Linux x64 выполните `chmod +x ./wireproxy-desktop-linux-amd64`, затем `./wireproxy-desktop-linux-amd64`.
+Таблица указывает [целевые среды сборки](.github/workflows/build.yml). На других дистрибутивах Linux нужны совместимые системные библиотеки. На Linux скачанному файлу может потребоваться право на выполнение. Например, для Linux x64 выполните `chmod +x ./wireproxy-desktop-linux-amd64`, затем `./wireproxy-desktop-linux-amd64`.
 
-Сборки для macOS имеют локальную подпись ad hoc. Подпись Developer ID и нотариализация Apple отсутствуют, поэтому Gatekeeper может заблокировать скачанный файл при первом запуске. [Требования Apple к распространению](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+### Первый запуск на macOS
+
+1. Откройте ** → Об этом Mac**. Убедитесь, что установлена macOS 15 Sequoia или новее. Для Mac с чипом Apple скачайте ZIP для **ARM64**, для Mac с процессором Intel — ZIP для **x64**.
+2. Скачайте ZIP из [GitHub Releases](https://github.com/WeslyG/wireproxy-desktop/releases/latest) и сверьте его SHA-256 со строкой для этого файла в `SHA256SUMS`. Распакуйте архив, перенесите **Wireproxy Desktop.app** в папку **Программы** и откройте его двойным щелчком.
+3. У приложения есть подпись ad hoc. Подпись Developer ID и нотариализация Apple отсутствуют. Если macOS сообщит, что не может проверить разработчика или приложение, закройте предупреждение и откройте **Системные настройки → Конфиденциальность и безопасность**. Прокрутите до раздела **Безопасность** и нажмите **Всё равно открыть** рядом с сообщением о Wireproxy Desktop. Кнопка доступна примерно час после попытки запуска. Если её нет, ещё раз попробуйте открыть приложение в Finder.
+4. Подтвердите открытие и, если macOS попросит, введите пароль учётной записи Mac. macOS запомнит исключение для этого приложения. [Инструкция Apple](https://support.apple.com/ru-ru/102445)
+5. В приложении прочитайте пояснение о Связке ключей и нажмите **Продолжить**. Wireproxy Desktop использует свою запись для профилей и настроек прокси.
+
+Если macOS сообщает, что приложение повреждено или может навредить компьютеру, остановитесь и проверьте источник и контрольную сумму архива. [Предупреждения macOS](https://support.apple.com/ru-ru/102445)
 
 ## Подключение
 
@@ -60,7 +75,7 @@
 
 ## Конфиденциальность
 
-**Без аналитики, телеметрии, трекеров и автоматической отправки журналов.** Журнал хранится в памяти. Проверка обновлений обращается к GitHub, а диагностика по кнопке делает HTTPS-запрос к `example.com` через проверяемый туннель.
+**Без аналитики, телеметрии, трекеров и автоматической отправки журналов.** Журнал хранится в памяти. Проверка обновлений обращается к GitHub, а диагностика по кнопке делает HTTPS-запрос к `example.com` через проверяемый туннель и при сбое пробует `www.gstatic.com`.
 
 ## Стек и сборка
 
@@ -71,7 +86,7 @@ Go, [Gio](https://gioui.org/) для интерфейса, [wireproxy-awg](https
 | Платформа | Команда |
 | --- | --- |
 | Windows | `go build -trimpath -ldflags="-s -w -H=windowsgui" -o wireproxy-desktop.exe .` |
-| macOS | `CGO_ENABLED=1 go build -trimpath -o wireproxy-desktop .` |
+| macOS | `sh scripts/build-macos-app.sh "Wireproxy Desktop.app"` |
 | Linux | `CGO_ENABLED=1 go build -tags novulkan -trimpath -o wireproxy-desktop .` |
 
-Для сборки на macOS нужны Xcode Command Line Tools. Для сборки на Linux нужны компилятор C, `pkg-config` и [пакеты разработки для Gio](https://gioui.org/doc/install/linux). При закрытии окна прокси останавливается, а при наличии трея приложение остаётся в фоне. Настройки прослушивания применяются при следующем подключении.
+Для сборки на macOS нужны Xcode Command Line Tools. Для сборки на Linux нужны компилятор C, `pkg-config` и [пакеты разработки для Gio](https://gioui.org/doc/install/linux). При наличии трея закрытие окна оставляет приложение и прокси в фоне. Чтобы остановить прокси, отключитесь в приложении или выберите выход в трее. Настройки прослушивания применяются при следующем подключении.

@@ -1,6 +1,30 @@
 package main
 
+import (
+	"strings"
+	"sync"
+)
+
+var systemLanguage = sync.OnceValue(func() string {
+	for _, locale := range preferredLocales() {
+		language := strings.FieldsFunc(strings.ToLower(locale), func(r rune) bool {
+			return strings.ContainsRune("-_.@", r)
+		})
+		if len(language) != 0 {
+			switch language[0] {
+			case "en", "ru":
+				return language[0]
+			}
+		}
+	}
+	return "en"
+})
+
 var russian = map[string]string{
+	"Keychain access": "Доступ к Связке ключей",
+	"System language": "Язык системы",
+	"Continue":        "Продолжить",
+	"After you continue, macOS may ask for Keychain access. Wireproxy Desktop uses its own Keychain entry to load and save your profiles and proxy settings.": "После нажатия «Продолжить» macOS может запросить доступ к Связке ключей. Wireproxy Desktop использует собственную запись в Связке ключей для загрузки и сохранения ваших профилей и настроек прокси.",
 	"Protected storage":                                                            "Защищённое хранилище",
 	"Opening protected storage…":                                                   "Открываю защищённое хранилище…",
 	"Saving to protected storage…":                                                 "Сохраняю в защищённое хранилище…",
@@ -128,6 +152,7 @@ var russian = map[string]string{
 	"App updates":         "Обновления приложения",
 	"Check for updates":   "Проверить обновления",
 	"Install and restart": "Установить и перезапустить",
+	"Download the new app from GitHub and replace your current copy.":      "Скачайте новую версию с GitHub и замените приложение.",
 	"Updates are available in tagged release builds.":                      "Обновление доступно в релизных сборках.",
 	"Checking GitHub for updates…":                                         "Проверяю обновления на GitHub…",
 	"Downloading and verifying the update…":                                "Скачиваю и проверяю обновление…",
@@ -139,7 +164,11 @@ var russian = map[string]string{
 }
 
 func (d *desktop) tr(value string) string {
-	if d.cfg.Settings.Language == "ru" {
+	language := d.cfg.Settings.Language
+	if language == "" || language == "system" {
+		language = systemLanguage()
+	}
+	if language == "ru" {
 		if translated, ok := russian[value]; ok {
 			return translated
 		}

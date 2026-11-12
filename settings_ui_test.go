@@ -29,7 +29,7 @@ func TestPortCheckRecognizesOwnWildcardListener(t *testing.T) {
 	d := &desktop{host: "127.0.0.1"}
 	d.port.SetText("1080")
 	d.verifyPort(sessionView{address: "0.0.0.0:1080", active: true, ready: true})
-	if d.messageError || d.suggestedPort != 0 || d.message != "Wireproxy is using this port · 0.0.0.0:1080" {
+	if d.messageError || d.suggestedPort != 0 || d.message != d.tr("Wireproxy is using this port")+" · 0.0.0.0:1080" {
 		t.Fatalf("expected running listener status, got %q and %d", d.message, d.suggestedPort)
 	}
 }

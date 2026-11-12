@@ -44,10 +44,15 @@ jobs:
           lipo "$output" -verify_arch arm64
           codesign --force --sign - "$output"
           codesign --verify "$output"
+          if [[ -f scripts/build-macos-app.sh ]]; then
+            bundle="$RUNNER_TEMP/Wireproxy Desktop.app"
+            sh scripts/build-macos-app.sh "$bundle" "$output"
+            ditto -c -k --keepParent "$bundle" "$output.zip"
+          fi
       - uses: actions/upload-artifact@v4
         with:
           name: recovered-macos-arm64
-          path: dist/wireproxy-desktop-macos-arm64
+          path: dist/wireproxy-desktop-macos-arm64*
           if-no-files-found: error
 
   release:
@@ -96,6 +101,9 @@ jobs:
             wireproxy-desktop-macos-amd64 wireproxy-desktop-macos-arm64
             wireproxy-desktop-windows-amd64.exe wireproxy-desktop-windows-arm64.exe
           )
+          if [[ -f scripts/build-macos-app.sh ]]; then
+            files+=(wireproxy-desktop-macos-amd64.zip wireproxy-desktop-macos-arm64.zip)
+          fi
           (cd dist && sha256sum "${files[@]}" > SHA256SUMS)
           awk -v tag="$RELEASE_TAG" '
             /^## / { if (found) exit; found = ($0 == "## " tag); next }

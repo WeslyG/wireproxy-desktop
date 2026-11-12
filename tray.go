@@ -94,10 +94,11 @@ func (t *desktopTray) available() bool {
 	return t.items.Load() != nil && traySupported()
 }
 
-func (t *desktopTray) awaitWindow() bool {
+func (t *desktopTray) awaitWindow(ui *desktop) bool {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
+		t.update(ui, ui.session.view(false).tunnelReady())
 		select {
 		case <-t.wake:
 			return !t.quitting.Load()
@@ -119,33 +120,34 @@ func (t *desktopTray) update(d *desktop, active bool) {
 	if active {
 		status = "Proxy on"
 	}
-	items.status.SetTitle(d.tr(status))
-	items.open.SetTitle(d.tr("Open Wireproxy Desktop"))
-	items.quit.SetTitle(d.tr("Quit"))
-	t.setIcon(active)
-	systray.SetTooltip("Wireproxy Desktop · " + d.tr(status))
+	update := func() {
+		items.status.SetTitle(d.tr(status))
+		items.open.SetTitle(d.tr("Open Wireproxy Desktop"))
+		items.quit.SetTitle(d.tr("Quit"))
+		t.setIcon(active)
+		systray.SetTooltip("Wireproxy Desktop · " + d.tr(status))
+	}
+	if window := t.window.Load(); runtime.GOOS == "darwin" && window != nil {
+		// Gio waits for the client to finish processing each event. Run the
+		// synchronous AppKit calls on Gio's thread while it is waiting.
+		window.Run(update)
+		return
+	}
+	update()
 }
 
 func (t *desktopTray) setIcon(active bool) {
+	if active {
+		systray.SetIcon(connectedTrayIcon())
+		return
+	}
 	switch runtime.GOOS {
 	case "windows":
-		icon := trayIdleICO
-		if active {
-			icon = applicationICO
-		}
-		systray.SetIcon(icon)
+		systray.SetIcon(trayIdleICO)
 	case "darwin":
-		if active {
-			systray.SetIcon(applicationIcon)
-		} else {
-			systray.SetTemplateIcon(trayTemplate, trayIdlePNG)
-		}
+		systray.SetTemplateIcon(trayTemplate, trayIdlePNG)
 	default:
-		icon := trayIdlePNG
-		if active {
-			icon = applicationIcon
-		}
-		systray.SetIcon(icon)
+		systray.SetIcon(trayIdlePNG)
 	}
 }
 

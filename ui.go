@@ -6,6 +6,7 @@ import (
 	"image/color"
 	"io"
 	"math"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,10 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 	"gioui.org/widget/material"
+	"golang.org/x/exp/shiny/materialdesign/icons"
 )
+
+var keychainLockIcon, _ = widget.NewIcon(icons.ActionLock)
 
 var (
 	engineVersion = tunnelEngineVersion()
@@ -65,6 +69,8 @@ type desktop struct {
 	store                                                 configStore
 	storeResults                                          chan configStoreResult
 	storeDone                                             func(error)
+	keychainNotice                                        bool
+	keychainContinue                                      widget.Clickable
 	storeStatus, migrationNotice                          string
 	cfg                                                   configuration
 	session                                               proxySession
@@ -92,7 +98,7 @@ type configStoreResult struct {
 }
 
 func newDesktop(store configStore, storeErr error, notify func()) *desktop {
-	d := &desktop{theme: material.NewTheme(), store: store, selected: -1, loadErr: storeErr,
+	d := &desktop{theme: material.NewTheme(), store: store, selected: -1, loadErr: storeErr, cfg: defaultConfig(),
 		storeResults: make(chan configStoreResult, 1),
 		probeResult:  make(chan profileProbeResult, 1)}
 	d.theme.Shaper = text.NewShaper(text.WithCollection(gofont.Collection()))
@@ -111,17 +117,28 @@ func newDesktop(store configStore, storeErr error, notify func()) *desktop {
 	d.password.Mask = '•'
 	d.port.Filter = "0123456789"
 	d.tunnel.WrapPolicy = text.WrapGraphemes
-	if storeErr == nil {
-		d.storeStatus = "Opening protected storage…"
-		go func() {
-			cfg, notice, err := store.load()
-			d.storeResults <- configStoreResult{cfg: cfg, notice: notice, err: err}
-			notify()
-		}()
-	} else {
+	switch {
+	case storeErr != nil:
 		d.applyLoadedConfig(configStoreResult{err: storeErr})
+	case runtime.GOOS == "darwin":
+		d.cfg.Settings.Language = store.startupLanguage()
+		d.keychainNotice = true
+	default:
+		d.loadProtectedConfig(notify)
 	}
 	return d
+}
+
+func (d *desktop) loadProtectedConfig(notify func()) {
+	d.storeStatus = "Opening protected storage…"
+	go func() {
+		cfg, notice, err := d.store.load()
+		if err == nil {
+			d.store.rememberStartupLanguage(cfg.Settings.Language)
+		}
+		d.storeResults <- configStoreResult{cfg: cfg, notice: notice, err: err}
+		notify()
+	}()
 }
 
 func (d *desktop) applyLoadedConfig(result configStoreResult) {
@@ -172,6 +189,9 @@ func (d *desktop) persist(cfg configuration, done func(error)) {
 	d.storeStatus, d.storeDone = "Saving to protected storage…", done
 	go func() {
 		err := d.store.save(cfg)
+		if err == nil {
+			d.store.rememberStartupLanguage(cfg.Settings.Language)
+		}
 		d.storeResults <- configStoreResult{cfg: cfg, err: err}
 		d.session.notify()
 	}()
@@ -468,6 +488,27 @@ func (d *desktop) field(editor *widget.Editor, hint string, height unit.Dp) layo
 }
 
 func (d *desktop) layout(gtx layout.Context) {
+	if d.keychainNotice {
+		if d.keychainContinue.Clicked(gtx) {
+			d.keychainNotice = false
+			d.loadProtectedConfig(d.session.notify)
+		} else {
+			paint.FillShape(gtx.Ops, background, clip.Rect{Max: gtx.Constraints.Max}.Op())
+			layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				gtx.Constraints.Max.X = min(gtx.Constraints.Max.X, gtx.Dp(460))
+				return stack(layout.Vertical,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						gtx.Constraints = layout.Exact(image.Pt(gtx.Dp(36), gtx.Dp(36)))
+						return keychainLockIcon.Layout(gtx, warning)
+					}), gap(10),
+					layout.Rigid(d.label(28, "Keychain access", textColor, font.Bold)), gap(12),
+					layout.Rigid(d.label(15, "After you continue, macOS may ask for Keychain access. Wireproxy Desktop uses its own Keychain entry to load and save your profiles and proxy settings.", textColor, font.Normal)), gap(16),
+					layout.Rigid(d.button(&d.keychainContinue, "Continue", selection, textColor, true)),
+				)(gtx)
+			})
+			return
+		}
+	}
 	view := d.session.view(d.page == 2)
 	if d.storeStatus == "" {
 		d.actions(gtx, view)

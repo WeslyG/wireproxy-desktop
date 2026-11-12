@@ -25,7 +25,7 @@ var (
 	getModuleHandle = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetModuleHandleW")
 )
 
-func setWindowIcon(event any) {
+func configureNativeWindow(_ *app.Window, event any) {
 	view, ok := event.(app.Win32ViewEvent)
 	if !ok || view.HWND == 0 {
 		return

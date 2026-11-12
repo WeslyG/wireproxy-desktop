@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ type updateControls struct {
 	release                     *desktopRelease
 	status                      string
 	busy, portable              bool
+	macBundle                   bool
 	helper                      io.WriteCloser
 	cancelDownload              context.CancelFunc
 }
@@ -38,6 +40,12 @@ type updateControls struct {
 func (u *updateControls) init(notify func(), portable bool) {
 	u.notify, u.portable = notify, portable
 	u.results = make(chan updateResult, 1)
+	if runtime.GOOS == "darwin" {
+		if executable, err := os.Executable(); err == nil {
+			bundle := filepath.Dir(filepath.Dir(filepath.Dir(executable)))
+			u.macBundle = filepath.Ext(bundle) == ".app"
+		}
+	}
 	if _, ok := stableVersion(version); ok {
 		u.checkRelease()
 	} else {
@@ -115,7 +123,7 @@ func (u *updateControls) update(gtx layout.Context) {
 	if u.check.Clicked(gtx) && !u.busy {
 		u.checkRelease()
 	}
-	if u.install.Clicked(gtx) && !u.busy && u.available() {
+	if u.install.Clicked(gtx) && !u.busy && u.available() && !u.macBundle {
 		u.download()
 	}
 	if u.openRelease.Clicked(gtx) {
@@ -171,7 +179,11 @@ func (u *updateControls) layout(d *desktop) layout.Widget {
 		status += " " + u.release.Tag
 	}
 	if u.available() && status == "" {
-		status = d.tr("Available version") + " " + u.release.Tag + ". " + d.tr("Installing restarts Wireproxy and disconnects the proxy.")
+		message := "Installing restarts Wireproxy and disconnects the proxy."
+		if u.macBundle {
+			message = "Download the new app from GitHub and replace your current copy."
+		}
+		status = d.tr("Available version") + " " + u.release.Tag + ". " + d.tr(message)
 	}
 	rows := []layout.FlexChild{
 		layout.Rigid(d.rawLabel(13, d.tr("App updates")+"  ·  "+version, textColor, font.Bold)),
@@ -187,7 +199,7 @@ func (u *updateControls) layout(d *desktop) layout.Widget {
 				return layout.Inset{Left: 7}.Layout(gtx, material.Loader(d.theme).Layout)
 			}),
 			gap(7),
-			layout.Rigid(d.button(&u.install, "Install and restart", selection, textColor, !u.busy && u.available())), gap(7),
+			layout.Rigid(d.button(&u.install, "Install and restart", selection, textColor, !u.busy && u.available() && !u.macBundle)), gap(7),
 			layout.Rigid(d.button(&u.openRelease, "Open release on GitHub", inputFill, textColor, true)),
 		)),
 	}
