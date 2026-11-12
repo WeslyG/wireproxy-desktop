@@ -57,6 +57,9 @@ binaries and `SHA256SUMS`. The release notes combine the matching changelog
 section with GitHub's generated notes. The updater reads the public Releases
 API for `WeslyG/wireproxy-desktop`.
 
+To rebuild an existing tag, run **Build and release desktop binaries**
+from GitHub Actions and enter the tag in **release_tag**.
+
 ## Build from source
 
 Use Go 1.26.11 or newer. Build separately for each OS and CPU architecture.

@@ -6,9 +6,17 @@ on:
     tags: ['v*']
   pull_request:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing tag to build and publish (leave blank for a test build)
+        type: string
+        required: false
 
 permissions:
   contents: read
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
 
 jobs:
   build:
@@ -31,6 +39,8 @@ jobs:
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG && format('refs/tags/{0}', env.RELEASE_TAG) || github.sha }}
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
@@ -44,9 +54,9 @@ jobs:
         run: |
           mkdir -p dist
           version=dev
-          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
-            [[ "$GITHUB_REF_NAME" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
-            version="$GITHUB_REF_NAME"
+          if [[ -n "$RELEASE_TAG" ]]; then
+            [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+            version="$RELEASE_TAG"
           fi
           flags="-s -w -X main.version=$version"
           case "${{ runner.os }}" in
@@ -76,18 +86,20 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: github.event_name == 'push' && github.ref_type == 'tag'
+    if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
     needs: build
     runs-on: ubuntu-24.04
     permissions:
       contents: write
     concurrency:
-      group: release-${{ github.ref }}
+      group: release-${{ inputs.release_tag || github.ref_name }}
       cancel-in-progress: false
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
       - uses: actions/download-artifact@v4
         with:
           pattern: wireproxy-desktop-*
@@ -96,13 +108,16 @@ jobs:
       - name: Publish release and changelog
         shell: bash
         run: |
+          if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == false ]]; then
+            exit 0
+          fi
           (
             cd dist
             sha256sum wireproxy-desktop-* > SHA256SUMS
           )
-          awk -v tag="$GITHUB_REF_NAME" '
+          awk -v tag="$RELEASE_TAG" '
             /^## / { if (found) exit; found = ($0 == "## " tag); next }
             found { print }
           ' CHANGELOG.md > release-notes.md
-          gh release create "$GITHUB_REF_NAME" dist/* \
-            --verify-tag --generate-notes --notes-file release-notes.md --title "$GITHUB_REF_NAME"
+          gh release create "$RELEASE_TAG" dist/* \
+            --verify-tag --generate-notes --notes-file release-notes.md --title "$RELEASE_TAG"
