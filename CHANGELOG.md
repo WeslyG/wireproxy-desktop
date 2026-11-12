@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.1
+
+- Fix a macOS startup freeze and use native window controls. The Dock reopens the window at its last position.
+- Keep the SOCKS5 proxy running when the window closes to the tray. Show a red connection indicator after a confirmed handshake and prevent duplicate desktop instances.
+- Build macOS app bundles for Intel and Apple Silicon. Download the ZIP and open the app from Finder. Bundle updates are available through GitHub Releases.
+- Follow the system language by default on macOS, Windows, and Linux. On macOS, explain Keychain access before requesting it and show the message in the selected language.
+- Try a fallback HTTPS endpoint when the primary SOCKS5 diagnostic endpoint fails.
+
 ## v1.0.0
 
 - Store profiles and proxy credentials in Windows DPAPI, macOS Keychain, or Linux Secret Service. Migrate legacy JSON after verifying the protected copy.
