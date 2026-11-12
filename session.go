@@ -16,6 +16,8 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+const tunnelEstablished = "Tunnel established"
+
 type proxySession struct {
 	mu                        sync.Mutex
 	process                   *exec.Cmd
@@ -27,6 +29,14 @@ type proxySession struct {
 	logs                      []string
 	options                   settings
 	protocol                  string
+	checkCancel               context.CancelFunc
+	checkGeneration           uint64
+	checkResult               *socksCheckResult
+}
+
+type socksCheckResult struct {
+	status string
+	err    error
 }
 
 type sessionView struct {
@@ -34,13 +44,22 @@ type sessionView struct {
 	active, ready, checking  bool
 	logs                     []string
 	protocol                 string
+	checkResult              *socksCheckResult
+}
+
+func (v sessionView) tunnelReady() bool {
+	return v.active && tunnelReady(v.status, v.ready)
+}
+
+func tunnelReady(status string, ready bool) bool {
+	return ready && status == tunnelEstablished
 }
 
 func (s *proxySession) view(includeLogs bool) sessionView {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	v := sessionView{profile: s.profile, address: s.address, status: s.status,
-		active: s.process != nil, ready: s.ready, checking: s.checking, protocol: s.protocol}
+		active: s.process != nil, ready: s.ready, checking: s.checking, protocol: s.protocol, checkResult: s.checkResult}
 	if includeLogs {
 		v.logs = append([]string(nil), s.logs...)
 	}
@@ -113,9 +132,15 @@ func (s *proxySession) monitor(cmd *exec.Cmd, input io.WriteCloser, output io.Re
 			s.logLocked("SOCKS5 listening on " + s.address)
 		case handshakeReady:
 			if !s.stopping {
-				s.status = "Tunnel established"
+				s.status = tunnelEstablished
 			}
 			s.logLocked("AmneziaWG / WireGuard handshake confirmed")
+		case handshakeLost:
+			if !s.stopping {
+				s.status = "Tunnel unavailable"
+				s.cancelCheckLocked()
+				s.logLocked("AmneziaWG / WireGuard handshake expired")
+			}
 		default:
 			if protocol, ok := strings.CutPrefix(line, protocolStatus); ok {
 				s.protocol = protocol
@@ -140,7 +165,8 @@ func (s *proxySession) monitor(cmd *exec.Cmd, input io.WriteCloser, output io.Re
 		s.logLocked("Proxy stopped")
 	}
 	s.process, s.input = nil, nil
-	s.ready, s.stopping, s.checking = false, false, false
+	s.cancelCheckLocked()
+	s.ready, s.stopping = false, false
 	close(s.done)
 	s.mu.Unlock()
 	s.notify()
@@ -151,6 +177,7 @@ func (s *proxySession) stop() <-chan struct{} {
 	defer s.mu.Unlock()
 	if s.process != nil && !s.stopping {
 		s.ready, s.stopping, s.status = false, true, "Stopping"
+		s.cancelCheckLocked()
 		input, process, done := s.input, s.process.Process, s.done
 		go input.Close()
 		go func() {
@@ -164,49 +191,75 @@ func (s *proxySession) stop() <-chan struct{} {
 	return s.done
 }
 
-func (s *proxySession) check() {
+func (s *proxySession) cancelCheckLocked() {
+	s.checkGeneration++
+	if s.checkCancel != nil {
+		s.checkCancel()
+		s.checkCancel = nil
+	}
+	s.checking = false
+}
+
+func (s *proxySession) check() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.ready || s.checking {
-		return
+	if s.process == nil || !canCheckSOCKS(s.status, s.ready, s.checking) {
+		return false
 	}
-	process, options := s.process, s.options
+	generation, options := s.checkGeneration, s.options
 	s.checking = true
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	s.checkCancel = cancel
 	s.logLocked("Checking HTTPS through SOCKS5")
 	go func() {
-		message := checkHTTPS(options)
+		defer cancel()
+		status, err := checkHTTPS(ctx, options)
 		s.mu.Lock()
-		if s.process == process {
+		if s.checkGeneration == generation {
 			s.checking = false
-			s.logLocked(message)
+			s.checkCancel = nil
+			if !s.stopping {
+				s.checkResult = &socksCheckResult{status: status, err: err}
+				if err != nil {
+					s.logLocked("SOCKS5 test failed: " + err.Error())
+				} else {
+					s.logLocked("SOCKS5 test passed: HTTP " + status)
+				}
+			}
 		}
 		s.mu.Unlock()
 		s.notify()
 	}()
+	return true
 }
 
-func checkHTTPS(options settings) string {
+func canCheckSOCKS(status string, ready, checking bool) bool {
+	return tunnelReady(status, ready) && !checking
+}
+
+func checkHTTPS(ctx context.Context, options settings) (string, error) {
 	var auth *proxy.Auth
 	if options.Username != "" {
 		auth = &proxy.Auth{User: options.Username, Password: options.Password}
 	}
 	dialer, err := proxy.SOCKS5("tcp", options.clientAddress(), auth, proxy.Direct)
 	if err != nil {
-		return "Could not initialize the SOCKS5 check"
+		return "", err
 	}
 	transport := &http.Transport{DialContext: dialer.(proxy.ContextDialer).DialContext}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{Transport: transport}
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com/", nil)
 	if err != nil {
-		return "Could not initialize the HTTPS check"
+		return "", err
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "SOCKS5 check failed: " + err.Error()
+		return "", err
 	}
 	_ = resp.Body.Close()
-	return "SOCKS5 check returned HTTP " + resp.Status
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("HTTP %s", resp.Status)
+	}
+	return resp.Status, nil
 }

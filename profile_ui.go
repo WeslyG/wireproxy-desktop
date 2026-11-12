@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"io"
 	"strings"
 
@@ -9,8 +11,8 @@ import (
 )
 
 type profileProbeResult struct {
-	config, protocol string
-	err              error
+	config string
+	err    error
 }
 
 func (d *desktop) draftConfig() string {
@@ -58,14 +60,12 @@ func (d *desktop) profileActions(gtx layout.Context) {
 	select {
 	case result := <-d.probeResult:
 		d.probing = false
-		if d.editing && result.config == d.draftConfig() {
-			switch {
-			case result.err == nil:
-				d.feedback(d.tr("Tunnel test passed")+" · "+result.protocol, false)
-			case result.protocol != "":
-				d.feedback(d.tr("Tunnel test failed")+" · "+result.protocol+" · "+result.err.Error(), true)
-			default:
-				d.feedback(result.err.Error(), true)
+		d.cancelConnectionProbe()
+		if d.editing && result.config == d.draftConfig() && !errors.Is(result.err, context.Canceled) {
+			if result.err == nil {
+				d.feedback("HTTPS works through the tunnel.", false)
+			} else {
+				d.feedback(d.tr("Tunnel test failed")+" · "+d.tr(result.err.Error()), true)
 			}
 		}
 	default:
@@ -83,14 +83,17 @@ func (d *desktop) profileActions(gtx layout.Context) {
 			if d.pin.Value {
 				cfg.DefaultProfile = name
 			}
-			if !d.persist(cfg) {
-				d.pin.Value = pinned
-			}
+			d.persist(cfg, func(err error) {
+				if err != nil {
+					d.pin.Value = pinned
+				}
+			})
 		}
 	}
 	if !d.editing {
 		return
 	}
+	d.showTunnel.Update(gtx)
 	if d.linkTab.Clicked(gtx) {
 		d.editINI = false
 	}
@@ -117,11 +120,20 @@ func (d *desktop) profileActions(gtx layout.Context) {
 		config := d.draftConfig()
 		d.probing = true
 		d.feedback("Checking the tunnel…", false)
+		ctx, cancel := context.WithCancel(context.Background())
+		d.cancelProbe = cancel
 		go func() {
-			protocol, err := probeProfile(config)
-			d.probeResult <- profileProbeResult{config, protocol, err}
+			err := probeInProcess(ctx, config)
+			d.probeResult <- profileProbeResult{config, err}
 			d.session.notify()
 		}()
+	}
+}
+
+func (d *desktop) cancelConnectionProbe() {
+	if d.cancelProbe != nil {
+		d.cancelProbe()
+		d.cancelProbe = nil
 	}
 }
 

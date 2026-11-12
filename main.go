@@ -13,6 +13,13 @@ import (
 
 func main() {
 	args := os.Args[1:]
+	if len(args) == 1 && args[0] == probeWorkerFlag {
+		if err := runProbeWorker(os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(args) == 1 && args[0] == "--version" {
 		fmt.Println(version)
 		return
@@ -52,10 +59,11 @@ func main() {
 
 func runDesktop(args []string, tray *desktopTray) error {
 	portable := slices.Contains(args, "--portable")
-	path, err := configPath(portable)
-	ui := newDesktop(path, err, tray.invalidate)
+	store, err := openConfigStore(portable)
+	ui := newDesktop(store, err, tray.invalidate)
 	ui.updates.init(tray.invalidate, portable)
 	defer ui.updates.shutdown()
+	defer ui.cancelConnectionProbe()
 	if slices.Contains(args, "--update-error") {
 		ui.feedback("Update installation failed. The previous version is still available.", true)
 	}
@@ -79,6 +87,7 @@ func runWindow(ui *desktop, tray *desktopTray) (bool, error) {
 	tray.window.Store(window)
 	defer tray.window.Store(nil)
 	customTitle, background := true, false
+	closeAfterSave := false
 	var decoration widget.Decorations
 	var ops op.Ops
 	for {
@@ -87,10 +96,17 @@ func runWindow(ui *desktop, tray *desktopTray) (bool, error) {
 			customTitle = !event.Config.Decorated
 			decoration.Maximized = event.Config.Mode == app.Maximized
 		case *app.ClosingEvent:
+			if ui.storeDone != nil {
+				event.Abort()
+				closeAfterSave = true
+				continue
+			}
+			ui.cancelConnectionProbe()
 			background = !tray.quitting.Load() && ui.updates.helper == nil && tray.available()
 			ui.session.stop()
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, event)
+			ui.updateConfigStore()
 			actions := system.Action(0)
 			if customTitle {
 				actions = decoration.Update(gtx)
@@ -100,8 +116,11 @@ func runWindow(ui *desktop, tray *desktopTray) (bool, error) {
 				actions |= system.ActionRaise
 			default:
 			}
-			if tray.quitting.Load() {
+			if (tray.quitting.Load() || closeAfterSave) && ui.storeDone == nil {
 				actions = system.ActionClose
+			} else if actions&system.ActionClose != 0 && ui.storeDone != nil {
+				closeAfterSave = true
+				actions &^= system.ActionClose
 			}
 			if actions != 0 {
 				window.Perform(actions)

@@ -1,0 +1,13 @@
+{
+  "name": "Wireproxy Desktop",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "remoteUser": "vscode",
+  "postCreateCommand": "git config --global --add safe.directory \"$(pwd)\" && go mod download",
+  "customizations": {
+    "vscode": {
+      "extensions": ["golang.Go"]
+    }
+  }
+}

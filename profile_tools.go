@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,8 +15,22 @@ import (
 	"github.com/go-ini/ini"
 )
 
+func tunnelEngineVersion() string {
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, dep := range info.Deps {
+			if dep.Path == "github.com/amnezia-vpn/amneziawg-go/v3" {
+				if dep.Replace != nil {
+					dep = dep.Replace
+				}
+				return dep.Version
+			}
+		}
+	}
+	return ""
+}
+
 func profileProtocol(config string) string {
-	parsed, err := loadTunnelINI(config)
+	parsed, declared, err := loadProfileINI(config)
 	if err != nil {
 		return ""
 	}
@@ -22,28 +38,75 @@ func profileProtocol(config string) string {
 	if err != nil {
 		return ""
 	}
-	for _, version := range []struct {
-		name string
-		keys []string
-	}{
-		{"AmneziaWG 3.1", []string{"RandomTrailers", "DisableCookies"}},
-		{"AmneziaWG 3.0", []string{"HeaderProtectionKey", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts"}},
-		{"AmneziaWG 2.0", []string{"S3", "S4", "I1", "I2", "I3", "I4", "I5"}},
-		{"AmneziaWG 1.0", []string{"Jc", "Jmin", "Jmax", "S1", "S2", "H1", "H2", "H3", "H4"}},
-	} {
-		for _, name := range version.keys {
-			key, err := iface.GetKey(name)
-			if err != nil || strings.TrimSpace(key.Value()) == "" {
+	value := func(name string) string {
+		if key, err := iface.GetKey(name); err == nil {
+			return strings.TrimSpace(key.Value())
+		}
+		return ""
+	}
+	enabled := func(names ...string) bool {
+		for _, name := range names {
+			raw := strings.ToLower(value(name))
+			switch raw {
+			case "", "0", "0-0", "off", "false":
 				continue
 			}
-			value := strings.ToLower(strings.TrimSpace(key.Value()))
-			if version.name == "AmneziaWG 3.1" && (value == "off" || value == "false" || value == "0") {
+			if low, high, ok := strings.Cut(raw, "-"); ok && strings.TrimSpace(low) == "0" && strings.TrimSpace(high) == "0" {
 				continue
 			}
-			return version.name
+			return true
+		}
+		return false
+	}
+	if declared == "AmneziaWG 3.1" || value("RandomTrailers") != "" || value("DisableCookies") != "" {
+		return "AmneziaWG 3.1"
+	}
+	if declared == "AmneziaWG 3.0" || enabled("HeaderProtectionKey", "ContentPaddingAddition", "RekeyAfterTime", "RekeyTimeout", "RejectAfterTime", "KeepaliveTimeout", "MaxHandshakeAttempts") {
+		return "AmneziaWG 3.0"
+	}
+	peers, _ := parsed.SectionsByName("Peer")
+	for _, peer := range peers {
+		if key, err := peer.GetKey("PersistentKeepalive"); err == nil && numericRange(key.Value()) {
+			return "AmneziaWG 3.0"
 		}
 	}
+	if declared != "" {
+		return declared
+	}
+	headers := [...]string{"H1", "H2", "H3", "H4"}
+	for _, name := range headers {
+		if numericRange(value(name)) {
+			return "AmneziaWG 2.0+"
+		}
+	}
+	if enabled("S3", "S4") {
+		return "AmneziaWG 2.0+"
+	}
+	if enabled("I1", "I2", "I3", "I4", "I5") {
+		return "AmneziaWG 1.5"
+	}
+	for index, name := range headers {
+		raw := value(name)
+		low, high, ranged := strings.Cut(raw, "-")
+		expected := strconv.Itoa(index + 1)
+		if raw != "" && raw != expected && !(ranged && strings.TrimSpace(low) == expected && strings.TrimSpace(high) == expected) {
+			return "AmneziaWG 1.0"
+		}
+	}
+	if enabled("Jc", "S1", "S2") {
+		return "AmneziaWG 1.0"
+	}
 	return "WireGuard v1"
+}
+
+func numericRange(value string) bool {
+	low, high, ok := strings.Cut(value, "-")
+	if !ok {
+		return false
+	}
+	minimum, first := strconv.ParseUint(strings.TrimSpace(low), 10, 32)
+	maximum, second := strconv.ParseUint(strings.TrimSpace(high), 10, 32)
+	return first == nil && second == nil && minimum < maximum
 }
 
 func convertProfile(link string) (string, error) {
@@ -51,7 +114,7 @@ func convertProfile(link string) (string, error) {
 	if !strings.HasPrefix(link, amneziaScheme) || len(link) > maxConfigLength {
 		return "", errors.New("Paste a complete vpn:// link.")
 	}
-	parsed, err := loadAmneziaConfig(ini.LoadOptions{AllowShadows: true, AllowNonUniqueSections: true}, link)
+	parsed, _, err := loadAmneziaConfig(ini.LoadOptions{AllowShadows: true, AllowNonUniqueSections: true}, link)
 	if err != nil {
 		return "", err
 	}
@@ -62,18 +125,17 @@ func convertProfile(link string) (string, error) {
 	return output.String(), nil
 }
 
-func probeProfile(config string) (string, error) {
+func probeProfile(config string) error {
 	if len(config) == 0 || len(config) > maxConfigLength {
-		return "", errors.New("Enter a configuration to check.")
+		return errors.New("Enter a configuration to check.")
 	}
 	conf, err := parseTunnel(config)
 	if err != nil {
-		return "", errors.New("Invalid profile or unresolved endpoint. Check the configuration.")
+		return errors.New("Invalid profile or unresolved endpoint. Check the configuration.")
 	}
-	protocol := profileProtocol(config)
 	tunnel, err := startTunnel(conf, device.LogLevelSilent)
 	if err != nil {
-		return protocol, err
+		return err
 	}
 	defer tunnel.Dev.Close()
 	transport := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
@@ -99,11 +161,11 @@ func probeProfile(config string) (string, error) {
 	client := http.Client{Transport: transport, Timeout: 12 * time.Second}
 	response, err := client.Get("https://example.com/")
 	if err != nil {
-		return protocol, err
+		return err
 	}
 	_ = response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return protocol, fmt.Errorf("HTTP %d", response.StatusCode)
+		return fmt.Errorf("HTTP %d", response.StatusCode)
 	}
-	return protocol, nil
+	return nil
 }

@@ -21,6 +21,18 @@ import (
 	"golang.org/x/net/proxy"
 )
 
+func TestHandshakeFreshness(t *testing.T) {
+	now := time.Unix(12345, 0)
+	if !handshakeFresh(latestHandshake("last_handshake_time_sec=12344\n"), now) {
+		t.Fatal("fresh handshake should enable tunnel actions")
+	}
+	for _, status := range []string{"", "last_handshake_time_sec=0\n", "last_handshake_time_sec=12315\n"} {
+		if handshakeFresh(latestHandshake(status), now) {
+			t.Fatalf("missing or expired handshake accepted: %q", status)
+		}
+	}
+}
+
 func TestWorkerRoutesSOCKS5ThroughWireGuard(t *testing.T) {
 	serverKey, err := ecdh.X25519().GenerateKey(rand.Reader)
 	if err != nil {
@@ -94,6 +106,21 @@ func TestWorkerRoutesSOCKS5ThroughWireGuard(t *testing.T) {
 		}
 		if time.Now().After(deadline) {
 			t.Fatal("SOCKS5 listener did not start")
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+
+	deadline = time.Now().Add(5 * time.Second)
+	for {
+		status, err := server.Dev.IpcGet()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !latestHandshake(status).IsZero() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("tunnel did not handshake before the first SOCKS5 request")
 		}
 		time.Sleep(25 * time.Millisecond)
 	}

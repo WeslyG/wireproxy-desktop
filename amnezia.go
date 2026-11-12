@@ -32,47 +32,48 @@ type amneziaProfile struct {
 }
 
 type amneziaProtocol struct {
-	LastConfig string `json:"last_config"`
+	LastConfig      string          `json:"last_config"`
+	ProtocolVersion json.RawMessage `json:"protocol_version,omitempty"`
 }
 
-func loadAmneziaConfig(options ini.LoadOptions, link string) (*ini.File, error) {
+func loadAmneziaConfig(options ini.LoadOptions, link string) (*ini.File, string, error) {
 	profile, err := decodeAmneziaProfile(link)
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 
-	var lastConfig string
+	var selected amneziaProtocol
 	for _, container := range profile.Containers {
 		if profile.DefaultContainer != "" && container.Name != profile.DefaultContainer {
 			continue
 		}
-		candidate := container.AWG.LastConfig
-		if candidate == "" {
-			candidate = container.WireGuard.LastConfig
+		candidate := container.AWG
+		if candidate.LastConfig == "" {
+			candidate = amneziaProtocol{LastConfig: container.WireGuard.LastConfig}
 		}
-		if candidate == "" {
+		if candidate.LastConfig == "" {
 			continue
 		}
-		if lastConfig != "" {
-			return nil, errors.New("Amnezia profile has multiple matching VPN configurations")
+		if selected.LastConfig != "" {
+			return nil, "", errors.New("Amnezia profile has multiple matching VPN configurations")
 		}
-		lastConfig = candidate
+		selected = candidate
 	}
-	if lastConfig == "" {
-		return nil, errors.New("Amnezia profile has no selected AmneziaWG or WireGuard client configuration")
+	if selected.LastConfig == "" {
+		return nil, "", errors.New("Amnezia profile has no selected AmneziaWG or WireGuard client configuration")
 	}
 
 	var client map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(lastConfig), &client); err != nil {
-		return nil, errors.New("invalid Amnezia client configuration JSON")
+	if err := json.Unmarshal([]byte(selected.LastConfig), &client); err != nil {
+		return nil, "", errors.New("invalid Amnezia client configuration JSON")
 	}
 	var nativeConfig string
 	if err := json.Unmarshal(client["config"], &nativeConfig); err != nil || strings.TrimSpace(nativeConfig) == "" {
-		return nil, errors.New("Amnezia client configuration has no embedded WireGuard INI")
+		return nil, "", errors.New("Amnezia client configuration has no embedded WireGuard INI")
 	}
 	cfg, err := ini.LoadSources(options, []byte(nativeConfig))
 	if err != nil {
-		return nil, errors.New("invalid embedded WireGuard INI in Amnezia profile")
+		return nil, "", errors.New("invalid embedded WireGuard INI in Amnezia profile")
 	}
 	for _, iface := range cfg.Sections() {
 		if !strings.EqualFold(iface.Name(), "Interface") {
@@ -82,10 +83,37 @@ func loadAmneziaConfig(options ini.LoadOptions, link string) (*ini.File, error) 
 			dns.SetValue(strings.NewReplacer("$PRIMARY_DNS", profile.DNS1, "$SECONDARY_DNS", profile.DNS2).Replace(dns.Value()))
 		}
 		if err := applyAmneziaParameters(iface, client); err != nil {
-			return nil, err
+			return nil, "", err
 		}
 	}
-	return cfg, nil
+	version := amneziaVersion(selected.ProtocolVersion)
+	if version == "" {
+		version = amneziaVersion(client["protocol_version"])
+	}
+	return cfg, version, nil
+}
+
+func amneziaVersion(raw json.RawMessage) string {
+	value := string(raw)
+	if strings.HasPrefix(value, "\"") {
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return ""
+		}
+	}
+	switch strings.TrimSpace(value) {
+	case "3.1":
+		return "AmneziaWG 3.1"
+	case "3.0":
+		return "AmneziaWG 3.0"
+	case "2", "2.0":
+		return "AmneziaWG 2.0"
+	case "1.5":
+		return "AmneziaWG 1.5"
+	case "1", "1.0":
+		return "AmneziaWG 1.0"
+	default:
+		return ""
+	}
 }
 
 func amneziaKey(section *ini.Section, name string) *ini.Key {

@@ -10,13 +10,16 @@ require (
 	github.com/go-ini/ini v1.67.0
 	github.com/godbus/dbus/v5 v5.2.2
 	github.com/things-go/go-socks5 v0.0.5
+	github.com/zalando/go-keyring v0.2.6
 	golang.org/x/net v0.48.0
 	golang.org/x/sys v0.40.0
 )
 
 require (
+	al.essio.dev/pkg/shellescape v1.5.1 // indirect
 	gioui.org/shader v1.0.9 // indirect
 	github.com/MakeNowJust/heredoc/v2 v2.0.1 // indirect
+	github.com/danieljoos/wincred v1.2.2 // indirect
 	github.com/go-text/typesetting v0.3.5 // indirect
 	github.com/google/btree v1.1.3 // indirect
 	golang.org/x/crypto v0.46.0 // indirect

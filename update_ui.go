@@ -14,6 +14,7 @@ import (
 	"gioui.org/io/system"
 	"gioui.org/layout"
 	"gioui.org/widget"
+	"gioui.org/widget/material"
 )
 
 type updateResult struct {
@@ -40,7 +41,7 @@ func (u *updateControls) init(notify func(), portable bool) {
 	if _, ok := stableVersion(version); ok {
 		u.checkRelease()
 	} else {
-		u.status = "Updates are available in tagged release builds."
+		u.status = "Automatic installation is available in release builds."
 	}
 }
 
@@ -101,6 +102,9 @@ func (u *updateControls) update(gtx layout.Context) {
 			u.status = "No newer release found."
 			if u.available() {
 				u.status = ""
+			}
+			if _, stable := stableVersion(version); !stable {
+				u.status = "Latest published release"
 			}
 		default:
 			u.release = nil
@@ -163,6 +167,9 @@ func (u *updateControls) shutdown() {
 func (u *updateControls) layout(d *desktop) layout.Widget {
 	_, released := stableVersion(version)
 	status := d.tr(u.status)
+	if !released && !u.busy && u.release != nil && u.status == "Latest published release" {
+		status += " " + u.release.Tag
+	}
 	if u.available() && status == "" {
 		status = d.tr("Available version") + " " + u.release.Tag + ". " + d.tr("Installing restarts Wireproxy and disconnects the proxy.")
 	}
@@ -172,7 +179,13 @@ func (u *updateControls) layout(d *desktop) layout.Widget {
 		layout.Rigid(d.rawLabel(13, status, muted, font.Normal)),
 		gap(8),
 		layout.Rigid(stack(layout.Horizontal,
-			layout.Rigid(d.button(&u.check, "Check for updates", selection, textColor, released && !u.busy)),
+			layout.Rigid(d.button(&u.check, "Check for updates", selection, textColor, !u.busy)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if !u.busy {
+					return layout.Dimensions{}
+				}
+				return layout.Inset{Left: 7}.Layout(gtx, material.Loader(d.theme).Layout)
+			}),
 			gap(7),
 			layout.Rigid(d.button(&u.install, "Install and restart", selection, textColor, !u.busy && u.available())), gap(7),
 			layout.Rigid(d.button(&u.openRelease, "Open release on GitHub", inputFill, textColor, true)),

@@ -1,77 +1,77 @@
 # Wireproxy Desktop
 
-A portable desktop app for AmneziaWG and WireGuard SOCKS5 proxies. The native
-window uses Gio and the same executable runs the proxy engine from the
-[wireproxy-awg fork](https://github.com/WeslyG/wireproxy-awg). It runs without
-administrator privileges, a separate wireproxy executable, or an installer.
+[English](README.en.md)
 
-## Use the app
+- Настольное приложение, которое поднимает SOCKS5-прокси через ваш сервер WireGuard или AmneziaWG.
 
-1. Under **Servers**, click **Add**, enter a name, and paste the entire
-   `vpn://` link or the contents of an AmneziaWG or WireGuard INI file.
-   **Check connection** tries an HTTPS request through the draft tunnel.
-   Switching from a pasted link to **INI** decodes it. Use **Copy configuration**
-   to copy the current format.
-2. Save and use **Connect** in the top bar. Check **Default server** to pin the
-   profile and make it available for quick connection from other pages.
-   Set your browser or other client to
-   `socks5://127.0.0.1:1080`, or use **Copy address**.
-3. Click **Test SOCKS5** to send an HTTPS request through the tunnel to
-   `example.com`. **Logs** shows the handshake, WireGuard engine messages,
-   and the test result. Enable **Verbose WireGuard logs** for handshake attempts,
-   retries, and device events. The protocol label is inferred from the profile.
-4. Disconnect and select another saved profile to switch servers.
+![Wireproxy Desktop со списком демонстрационных серверов, основным профилем и кнопкой подключения](assets/screenshot.jpg)
 
-**Settings → Proxy** lists local network addresses and wildcard listeners.
-**Check port** tests the selected address and suggests an alternative when
-the requested port is occupied. Enable **Use SOCKS5 authentication** to enter
-a username and password. Proxy settings apply on the next connection.
-Choose English or Russian in **Settings → Language**.
-When importing INI, the app uses
-`[Interface]` and `[Peer]` for the tunnel. The GUI supplies the SOCKS5 listener.
+## Скачать
 
-Profiles and settings are saved in the OS user configuration directory. See
-**Settings** for the exact path. To store them alongside the executable,
-launch it with `--portable`. Private keys and SOCKS5 credentials are stored as
-plain JSON under your user account. Keep the profile file private when copying
-or backing up the executable. The activity log stays in memory.
+[Последний релиз](https://github.com/WeslyG/wireproxy-desktop/releases/latest) · [Все релизы](https://github.com/WeslyG/wireproxy-desktop/releases) · [SHA256SUMS](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/SHA256SUMS)
 
-Closing the window stops SOCKS5 and leaves Wireproxy Desktop in the system
-tray. Use **Open Wireproxy Desktop** to reopen the window or **Quit** to exit.
-Reopening leaves SOCKS5 disconnected until you click **Connect**. On Linux,
-the tray requires a StatusNotifier host, such as KDE Plasma's system tray
-or GNOME with an AppIndicator extension. Closing the window exits the app
-if a tray host is unavailable.
-
-## Updates and releases
-
-Tagged builds check GitHub for a newer stable release when the app opens.
-Open **Settings → Updates** to see what changed, open the release on GitHub,
-check again, or choose **Install and restart**. The app downloads the binary for the current OS and architecture,
-verifies its SHA-256 digest, then disconnects the proxy and restarts. The
-executable directory must be writable. Your profile file stays in place.
-
-For a release, add a `## vX.Y.Z` section to `CHANGELOG.md`, then push that
-tag. GitHub Actions tests and builds all six targets before publishing the
-binaries and `SHA256SUMS`. The release notes combine the matching changelog
-section with GitHub's generated notes. The updater reads the public Releases
-API for `WeslyG/wireproxy-desktop`.
-
-To rebuild an existing tag, run **Build and release desktop binaries**
-from GitHub Actions and enter the tag in **release_tag**.
-
-## Build from source
-
-Use Go 1.26.11 or newer. Build separately for each OS and CPU architecture.
-
-| Platform | Build environment | Command |
+| Система | x64 | ARM64 |
 | --- | --- | --- |
-| Windows | Go | `go build -trimpath -ldflags="-s -w -H=windowsgui" -o wireproxy-desktop.exe .` |
-| macOS | Go and Xcode Command Line Tools | `CGO_ENABLED=1 go build -trimpath -ldflags="-s -w" -o wireproxy-desktop .` |
-| Linux | Go, a C compiler, and Gio's X11/Wayland and EGL development libraries | `CGO_ENABLED=1 go build -tags novulkan -trimpath -ldflags="-s -w" -o wireproxy-desktop .` |
+| Windows | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-amd64.exe) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-arm64.exe) |
+| macOS | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64) |
+| Linux | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
 
-Linux uses the graphics libraries already present in a desktop session.
-The macOS build is a raw executable that can be launched from Terminal.
-GitHub Actions applies an ad-hoc signature to both macOS binaries.
-See [Gio's installation guide](https://gioui.org/doc/install) for system
-requirements and additional architectures.
+## Системные требования
+
+Готовая сборка запускается от обычного пользователя. Установщик, Go и драйвер WireGuard для запуска не нужны.
+
+| ОС | Целевая среда | Что нужно для запуска |
+| --- | --- | --- |
+| Windows | Windows 11, x64 или ARM64 | Запустите скачанный `.exe`. Дополнительных компонентов нет. |
+| macOS | macOS 15, Intel или Apple Silicon | Бинарник запускается из Терминала, если политика Gatekeeper разрешает запуск. Для хранения профилей используется встроенная связка ключей. |
+| Linux | Ubuntu 24.04 Desktop, x64 или ARM64 | Нужна графическая сессия X11 или Wayland с системными библиотеками EGL/OpenGL ES и доступное хранилище Secret Service. Если в вашей среде его нет, установите GNOME Keyring или включите совместимый сервис KWallet. Для трея нужен StatusNotifier-хост. |
+
+Таблица указывает [целевые среды сборки](.github/workflows/build.yml). На других дистрибутивах Linux нужны совместимые системные библиотеки. На macOS и Linux скачанному файлу может потребоваться право на выполнение. Например, для Linux x64 выполните `chmod +x ./wireproxy-desktop-linux-amd64`, затем `./wireproxy-desktop-linux-amd64`.
+
+Сборки для macOS имеют локальную подпись ad hoc. Подпись Developer ID и нотариализация Apple отсутствуют, поэтому Gatekeeper может заблокировать скачанный файл при первом запуске. [Требования Apple к распространению](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
+
+## Подключение
+
+1. В разделе **Серверы** добавьте профиль из ссылки `vpn://` или файла `.conf`. Вкладка **INI** преобразует ссылку в конфигурацию, которую можно скопировать.
+2. Нажмите **Подключить**. Отметьте **Основной сервер**, чтобы быстро подключаться к нему с других вкладок.
+3. Укажите `socks5://127.0.0.1:1080` в браузере или другом приложении либо скопируйте фактический URL из Wireproxy Desktop.
+
+Приложение работает с **WireGuard v1** и профилями **AmneziaWG 1.0, 1.5, 2.0, 3.0 и 3.1**. В карточке сервера отдельно показаны версия профиля и версия встроенного движка. Для INI версия профиля определяется по параметрам.
+
+В настройках можно выбрать язык, адрес и порт SOCKS5, проверить доступность порта и включить авторизацию по логину и паролю. Для прослушивания доступны локальные интерфейсы и все интерфейсы IPv4 или IPv6.
+
+## Хранение секретов
+
+| ОС | Где хранятся профили, ключи и пароль SOCKS5 |
+| --- | --- |
+| Windows | Шифротекст DPAPI в реестре текущего пользователя |
+| macOS | Системная связка ключей (Keychain) |
+| Linux | Secret Service, например GNOME Keyring или KWallet |
+
+При первом запуске старая конфигурация переносится в защищённое хранилище. Приложение удаляет старый JSON после проверки сохранённых данных. `--portable` создаёт отдельную запись хранилища ОС для каталога запуска.
+
+## Обновления
+
+Релизная сборка при запуске проверяет GitHub Releases. В **Настройки → Обновления** доступны ручная проверка, список изменений и ссылка на релиз. По команде **Установить и перезапустить** приложение скачивает файл для вашей платформы, проверяет SHA-256 и перезапускается. Для замены файла нужна запись в каталог программы.
+
+## Диагностика
+
+**Проверить подключение** тестирует черновик профиля через HTTPS. **Тест SOCKS5** проверяет рабочий прокси после рукопожатия. В журнале видны состояние туннеля, события WireGuard и результаты проверок. Доступны подробный режим, копирование и автоматическая прокрутка.
+
+## Конфиденциальность
+
+**Без аналитики, телеметрии, трекеров и автоматической отправки журналов.** Журнал хранится в памяти. Проверка обновлений обращается к GitHub, а диагностика по кнопке делает HTTPS-запрос к `example.com` через проверяемый туннель.
+
+## Стек и сборка
+
+Go, [Gio](https://gioui.org/) для интерфейса, [wireproxy-awg](https://github.com/WeslyG/wireproxy-awg) и AmneziaWG-Go для туннеля. GitHub Actions собирает шесть платформенных вариантов. Требуется Go 1.26.11 или новее.
+
+Для разработки установите Docker и расширение **Dev Containers** в VS Code, откройте репозиторий и выберите **Dev Containers: Reopen in Container**. Контейнер включает Go и зависимости Gio для Linux. В его терминале выполните `go test -tags novulkan ./...` и `go build -tags novulkan -o dist/wireproxy-desktop .`. Для проверки окна и интеграции с хранилищем секретов запускайте сборку в графической сессии целевой ОС.
+
+| Платформа | Команда |
+| --- | --- |
+| Windows | `go build -trimpath -ldflags="-s -w -H=windowsgui" -o wireproxy-desktop.exe .` |
+| macOS | `CGO_ENABLED=1 go build -trimpath -o wireproxy-desktop .` |
+| Linux | `CGO_ENABLED=1 go build -tags novulkan -trimpath -o wireproxy-desktop .` |
+
+Для сборки на macOS нужны Xcode Command Line Tools. Для сборки на Linux нужны компилятор C, `pkg-config` и [пакеты разработки для Gio](https://gioui.org/doc/install/linux). При закрытии окна прокси останавливается, а при наличии трея приложение остаётся в фоне. Настройки прослушивания применяются при следующем подключении.

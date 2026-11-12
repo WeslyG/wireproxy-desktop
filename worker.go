@@ -27,6 +27,7 @@ const (
 	workerFlag      = "--proxy-worker"
 	listenerReady   = "[wireproxy-desktop] listening"
 	handshakeReady  = "[wireproxy-desktop] handshake"
+	handshakeLost   = "[wireproxy-desktop] handshake expired"
 	protocolStatus  = "[wireproxy-desktop] protocol "
 	maxConfigLength = 6 << 20
 )
@@ -83,6 +84,11 @@ func (s settings) validate() error {
 }
 
 func loadTunnelINI(config string) (*ini.File, error) {
+	parsed, _, err := loadProfileINI(config)
+	return parsed, err
+}
+
+func loadProfileINI(config string) (*ini.File, string, error) {
 	config = strings.TrimSpace(strings.TrimPrefix(config, "\uFEFF"))
 	options := ini.LoadOptions{
 		Insensitive: true, AllowShadows: true, AllowNonUniqueSections: true,
@@ -90,7 +96,8 @@ func loadTunnelINI(config string) (*ini.File, error) {
 	if strings.HasPrefix(config, amneziaScheme) {
 		return loadAmneziaConfig(options, config)
 	}
-	return ini.LoadSources(options, []byte(config))
+	parsed, err := ini.LoadSources(options, []byte(config))
+	return parsed, "", err
 }
 
 func parseTunnel(config string) (*wireproxy.DeviceConfig, error) {
@@ -161,7 +168,7 @@ func runWorker(input io.Reader) error {
 	server := socks5.NewServer(options...)
 	fmt.Println(protocolStatus + profileProtocol(config.Config))
 	fmt.Println(listenerReady)
-	go reportHandshake(ctx, tun.Dev)
+	go monitorHandshake(ctx, tun.Dev, tunnel.Peers)
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()
@@ -170,6 +177,24 @@ func runWorker(input io.Reader) error {
 		return fmt.Errorf("SOCKS5 listener stopped: %w", err)
 	}
 	return nil
+}
+
+func initiateHandshakes(ctx context.Context, dev *device.Device, peers []wireproxy.PeerConfig) {
+	for _, config := range peers {
+		if ctx.Err() != nil {
+			return
+		}
+		if config.Endpoint == nil {
+			continue
+		}
+		var key device.NoisePublicKey
+		if err := key.FromHex(config.PublicKey); err != nil {
+			continue
+		}
+		if peer := dev.LookupPeer(key); peer != nil {
+			_ = peer.SendHandshakeInitiation(false)
+		}
+	}
 }
 
 func startTunnel(conf *wireproxy.DeviceConfig, level int) (*wireproxy.VirtualTun, error) {
@@ -196,25 +221,54 @@ func startTunnel(conf *wireproxy.DeviceConfig, level int) (*wireproxy.VirtualTun
 	}, nil
 }
 
-func reportHandshake(ctx context.Context, dev *device.Device) {
+func monitorHandshake(ctx context.Context, dev *device.Device, peers []wireproxy.PeerConfig) {
+	const refreshInterval = 20 * time.Second
+	var lastAttempt time.Time
+	established := false
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for {
+		now := time.Now()
+		status, err := dev.IpcGet()
+		last := latestHandshake(status)
+		available := err == nil && handshakeFresh(last, now)
+		if established != available {
+			established = available
+			if established {
+				fmt.Println(handshakeReady)
+			} else {
+				fmt.Println(handshakeLost)
+			}
+		}
+		if now.Sub(last) >= refreshInterval && now.Sub(lastAttempt) >= refreshInterval {
+			lastAttempt = now
+			initiateHandshakes(ctx, dev, peers)
+		}
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			status, err := dev.IpcGet()
-			if err != nil {
-				continue
-			}
-			for line := range strings.SplitSeq(status, "\n") {
-				seconds, found := strings.CutPrefix(line, "last_handshake_time_sec=")
-				if found && seconds != "" && seconds != "0" {
-					fmt.Println(handshakeReady)
-					return
-				}
+		}
+	}
+}
+
+func handshakeFresh(last, now time.Time) bool {
+	age := now.Sub(last)
+	return !last.IsZero() && age >= 0 && age < 30*time.Second
+}
+
+func latestHandshake(status string) time.Time {
+	var latest int64
+	for line := range strings.SplitSeq(status, "\n") {
+		seconds, found := strings.CutPrefix(line, "last_handshake_time_sec=")
+		if found {
+			if value, err := strconv.ParseInt(seconds, 10, 64); err == nil && value > latest {
+				latest = value
 			}
 		}
 	}
+	if latest == 0 {
+		return time.Time{}
+	}
+	return time.Unix(latest, 0)
 }

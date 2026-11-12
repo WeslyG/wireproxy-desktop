@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.0.0
+
+- Store profiles and proxy credentials in Windows DPAPI, macOS Keychain, or Linux Secret Service. Migrate legacy JSON after verifying the protected copy.
+- Detect AmneziaWG 3.1 profiles and display the bundled engine version separately.
+- Require a confirmed tunnel before enabling SOCKS5 testing or copying the proxy URL. Cancel an active check when the tunnel stops responding.
+- Mark the default server in the list, add a cancel action for removal, and refine status feedback and proxy settings.
+- Refresh the application and tray icons, add Russian and English documentation with screenshots, and include a Linux development container.
+
 ## v0.4.0
 
 - A single Connect / Disconnect control follows the current session state.
