@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -19,36 +18,33 @@ import (
 )
 
 type updateResult struct {
+	check, automatic       bool
 	release                *desktopRelease
 	target, staged, digest string
 	err                    error
 }
 
 type updateControls struct {
-	window                      *app.Window
-	notify                      func()
-	results                     chan updateResult
-	check, install, openRelease widget.Clickable
-	release                     *desktopRelease
-	status                      string
-	busy, portable              bool
-	macBundle                   bool
-	helper                      io.WriteCloser
-	cancelDownload              context.CancelFunc
+	window                         *app.Window
+	notify                         func()
+	results                        chan updateResult
+	check, install, openRelease    widget.Clickable
+	footerInstall, whatsNew        widget.Clickable
+	autoCheck                      widget.Bool
+	release                        *desktopRelease
+	status                         string
+	busy, portable                 bool
+	checking, manualCheck, started bool
+	macBundle                      bool
+	helper                         io.WriteCloser
+	cancelDownload                 context.CancelFunc
 }
 
 func (u *updateControls) init(notify func(), portable bool) {
 	u.notify, u.portable = notify, portable
 	u.results = make(chan updateResult, 1)
-	if runtime.GOOS == "darwin" {
-		if executable, err := os.Executable(); err == nil {
-			bundle := filepath.Dir(filepath.Dir(filepath.Dir(executable)))
-			u.macBundle = filepath.Ext(bundle) == ".app"
-		}
-	}
-	if _, ok := stableVersion(version); ok {
-		u.checkRelease()
-	} else {
+	u.macBundle = runtime.GOOS == "darwin"
+	if _, ok := stableVersion(version); !ok {
 		u.status = "Automatic installation is available in release builds."
 	}
 }
@@ -58,13 +54,16 @@ func (u *updateControls) submit(result updateResult) {
 	u.notify()
 }
 
-func (u *updateControls) checkRelease() {
-	u.busy, u.status = true, "Checking GitHub for updates…"
+func (u *updateControls) checkRelease(automatic bool) {
+	u.checking, u.manualCheck = true, !automatic
+	if !automatic {
+		u.status = "Checking GitHub for updates…"
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		release, err := fetchRelease(ctx, updateClient, releaseAPI, version, platformAsset(runtime.GOOS, runtime.GOARCH))
-		u.submit(updateResult{release: release, err: err})
+		u.submit(updateResult{check: true, automatic: automatic, release: release, err: err})
 	}()
 }
 
@@ -85,9 +84,35 @@ func (u *updateControls) download() {
 	}()
 }
 
-func (u *updateControls) update(gtx layout.Context) {
+func (u *updateControls) update(gtx layout.Context, d *desktop) {
+	if !u.started && d.storeStatus == "" {
+		u.started = true
+		u.autoCheck.Value = !d.cfg.Settings.DisableUpdateCheck
+		if _, stable := stableVersion(version); stable && u.autoCheck.Value {
+			u.checkRelease(true)
+		}
+	}
 	select {
 	case result := <-u.results:
+		if result.check {
+			u.checking, u.manualCheck = false, false
+			switch {
+			case result.err != nil:
+				if !result.automatic {
+					u.status = "Could not check for updates. Try again later."
+				}
+			case !result.automatic || !d.cfg.Settings.DisableUpdateCheck:
+				u.release = result.release
+				u.status = ""
+				if !u.available() && !result.automatic {
+					u.status = "No newer release found."
+					if _, stable := stableVersion(version); !stable && u.release != nil {
+						u.status = "Latest published release"
+					}
+				}
+			}
+			break
+		}
 		u.busy = false
 		u.cancelDownload = nil
 		switch {
@@ -105,26 +130,42 @@ func (u *updateControls) update(gtx layout.Context) {
 			}
 			u.helper, u.busy, u.status = helper, true, "Restarting to install the update…"
 			u.window.Perform(system.ActionClose)
-		case result.release != nil:
-			u.release = result.release
-			u.status = "No newer release found."
-			if u.available() {
-				u.status = ""
-			}
-			if _, stable := stableVersion(version); !stable {
-				u.status = "Latest published release"
-			}
-		default:
-			u.release = nil
-			u.status = "No newer release found."
 		}
 	default:
 	}
-	if u.check.Clicked(gtx) && !u.busy {
-		u.checkRelease()
+	if d.storeStatus != "" {
+		return
 	}
-	if u.install.Clicked(gtx) && !u.busy && u.available() && !u.macBundle {
-		u.download()
+	if u.autoCheck.Update(gtx) && d.page == 1 && d.settingsTab == 2 {
+		cfg := d.cfg
+		cfg.Settings.DisableUpdateCheck = !u.autoCheck.Value
+		d.persist(cfg, func(err error) {
+			u.autoCheck.Value = !d.cfg.Settings.DisableUpdateCheck
+			if err == nil && u.autoCheck.Value && !u.checking && !u.busy {
+				if _, stable := stableVersion(version); stable {
+					u.checkRelease(true)
+				}
+			}
+		})
+		return
+	}
+	if u.whatsNew.Clicked(gtx) && u.available() {
+		d.cancelConnectionProbe()
+		d.page, d.settingsTab = 1, 2
+		d.settingsList.Position = layout.Position{}
+		d.interfaceOpen, d.languageOpen = false, false
+	}
+	if u.check.Clicked(gtx) && !u.busy && !u.checking {
+		u.checkRelease(false)
+	}
+	install := u.install.Clicked(gtx)
+	footerInstall := u.footerInstall.Clicked(gtx)
+	if (install || footerInstall) && !u.busy && !u.checking && u.available() {
+		if u.macBundle {
+			_ = openReleasePage(u.release)
+		} else {
+			u.download()
+		}
 	}
 	if u.openRelease.Clicked(gtx) {
 		if err := openReleasePage(u.release); err != nil {
@@ -135,6 +176,13 @@ func (u *updateControls) update(gtx layout.Context) {
 
 func (u *updateControls) available() bool {
 	return u.release != nil && u.release.Asset.Name != "" && isNewer(u.release.Tag, version)
+}
+
+func (u *updateControls) installLabel() string {
+	if u.macBundle {
+		return "Download on GitHub"
+	}
+	return "Install and restart"
 }
 
 func openReleasePage(release *desktopRelease) error {
@@ -190,16 +238,11 @@ func (u *updateControls) layout(d *desktop) layout.Widget {
 		gap(5),
 		layout.Rigid(d.rawLabel(13, status, muted, font.Normal)),
 		gap(8),
+		layout.Rigid(material.CheckBox(d.theme, &u.autoCheck, d.tr("Check for updates automatically")).Layout),
 		layout.Rigid(stack(layout.Horizontal,
-			layout.Rigid(d.button(&u.check, "Check for updates", selection, textColor, !u.busy)),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				if !u.busy {
-					return layout.Dimensions{}
-				}
-				return layout.Inset{Left: 7}.Layout(gtx, material.Loader(d.theme).Layout)
-			}),
+			layout.Rigid(d.updateButton(&u.check, "Check for updates", u.manualCheck, !u.busy && !u.checking)),
 			gap(7),
-			layout.Rigid(d.button(&u.install, "Install and restart", selection, textColor, !u.busy && u.available() && !u.macBundle)), gap(7),
+			layout.Rigid(d.updateButton(&u.install, u.installLabel(), u.busy, !u.busy && !u.checking && u.available())), gap(7),
 			layout.Rigid(d.button(&u.openRelease, "Open release on GitHub", inputFill, textColor, true)),
 		)),
 	}

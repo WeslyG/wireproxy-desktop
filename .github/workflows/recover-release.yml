@@ -45,9 +45,14 @@ jobs:
           codesign --force --sign - "$output"
           codesign --verify "$output"
           if [[ -f scripts/build-macos-app.sh ]]; then
-            bundle="$RUNNER_TEMP/Wireproxy Desktop.app"
-            sh scripts/build-macos-app.sh "$bundle" "$output"
+            bundle="$RUNNER_TEMP/Wireproxy Desktop $RELEASE_TAG.app"
+            if grep -q CFBundleShortVersionString scripts/build-macos-app.sh; then
+              sh scripts/build-macos-app.sh "$bundle" "$output" "$RELEASE_TAG"
+            else
+              sh scripts/build-macos-app.sh "$bundle" "$output"
+            fi
             ditto -c -k --keepParent "$bundle" "$output.zip"
+            rm -- "$output"
           fi
       - uses: actions/upload-artifact@v4
         with:
@@ -98,11 +103,12 @@ jobs:
           fi
           files=(
             wireproxy-desktop-linux-amd64 wireproxy-desktop-linux-arm64
-            wireproxy-desktop-macos-amd64 wireproxy-desktop-macos-arm64
             wireproxy-desktop-windows-amd64.exe wireproxy-desktop-windows-arm64.exe
           )
           if [[ -f scripts/build-macos-app.sh ]]; then
             files+=(wireproxy-desktop-macos-amd64.zip wireproxy-desktop-macos-arm64.zip)
+          else
+            files+=(wireproxy-desktop-macos-amd64 wireproxy-desktop-macos-arm64)
           fi
           (cd dist && sha256sum "${files[@]}" > SHA256SUMS)
           awk -v tag="$RELEASE_TAG" '

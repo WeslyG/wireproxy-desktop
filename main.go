@@ -107,6 +107,7 @@ func runWindow(ui *desktop, tray *desktopTray) (bool, error) {
 	closeAfterSave := false
 	var decoration widget.Decorations
 	var ops op.Ops
+	var placement windowPlacement
 	for {
 		switch event := window.Event().(type) {
 		case app.ConfigEvent:
@@ -119,10 +120,16 @@ func runWindow(ui *desktop, tray *desktopTray) (bool, error) {
 				continue
 			}
 			ui.cancelConnectionProbe()
+			placement.save(ui.store.scope)
 			background = !tray.quitting.Load() && ui.updates.helper == nil && tray.available()
 		case app.FrameEvent:
 			gtx := app.NewContext(&ops, event)
 			ui.updateConfigStore()
+			select {
+			case action := <-tray.tunnel:
+				tray.applyTunnelAction(ui, action)
+			default:
+			}
 			actions := system.Action(0)
 			if customTitle {
 				actions = decoration.Update(gtx)
@@ -141,14 +148,15 @@ func runWindow(ui *desktop, tray *desktopTray) (bool, error) {
 			if actions != 0 {
 				window.Perform(actions)
 			}
-			ui.updates.update(gtx)
+			ui.updates.update(gtx, ui)
 			ui.layoutWindow(gtx, &decoration, customTitle)
 			event.Frame(gtx.Ops)
-			tray.update(ui, ui.session.view(false).tunnelReady())
+			tray.update(ui, ui.session.view(false))
 		case app.DestroyEvent:
 			return background, event.Err
 		default:
 			configureNativeWindow(window, event)
+			placement.attach(event, ui.store.scope)
 		}
 	}
 }

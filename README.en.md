@@ -67,7 +67,7 @@ On first launch, the app migrates the old configuration to protected storage and
 
 ## Updates
 
-Release builds check GitHub Releases at startup. Open **Settings → Updates** to check manually, read release notes, or visit the release page. **Install and restart** downloads the binary for your platform, verifies its SHA-256 digest, and restarts the app. The executable directory must be writable.
+Release builds check GitHub Releases at startup. You can turn automatic checks off in **Settings → Updates**. New versions appear in the status bar at the bottom of the window. **What's new** opens the release notes in the app. On Windows and Linux, **Install and restart** downloads the binary, verifies its SHA-256 digest, and restarts the app. The executable directory must be writable. On macOS, the download button opens the release page so you can replace the app from the ZIP.
 
 ## Diagnostics
 

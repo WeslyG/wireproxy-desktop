@@ -6,8 +6,10 @@ import (
 )
 
 func preferredLocales() []string {
-	if locale := os.Getenv("LC_ALL"); locale != "" {
-		return []string{locale}
+	for _, name := range []string{"LC_ALL", "LC_MESSAGES", "LANG"} {
+		if locale := strings.TrimSpace(os.Getenv(name)); locale != "" {
+			return []string{locale}
+		}
 	}
-	return append(strings.Split(os.Getenv("LANGUAGE"), ":"), os.Getenv("LC_MESSAGES"), os.Getenv("LANG"))
+	return strings.Split(os.Getenv("LANGUAGE"), ":")
 }

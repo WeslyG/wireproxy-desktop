@@ -78,9 +78,10 @@ jobs:
               go build -trimpath -ldflags="$flags" -o "$output" .
               codesign --force --sign - "$output"
               codesign --verify "$output"
-              bundle="$RUNNER_TEMP/Wireproxy Desktop.app"
-              sh scripts/build-macos-app.sh "$bundle" "$output"
+              bundle="$RUNNER_TEMP/Wireproxy Desktop ${version}.app"
+              sh scripts/build-macos-app.sh "$bundle" "$output" "$version"
               ditto -c -k --keepParent "$bundle" "$output.zip"
+              rm -- "$output"
               ;;
           esac
       - uses: actions/upload-artifact@v4

@@ -557,6 +557,8 @@ func (d *desktop) layout(gtx layout.Context) {
 					message, failed = d.tr("Could not open protected storage")+" · "+d.loadErr.Error(), true
 				} else if d.migrationNotice != "" {
 					message, failed = d.tr(d.migrationNotice), true
+				} else if d.updates.available() {
+					message, failed = d.tr("Available version")+" "+d.updates.release.Tag, false
 				} else {
 					return layout.Spacer{}.Layout(gtx)
 				}
@@ -564,11 +566,19 @@ func (d *desktop) layout(gtx layout.Context) {
 				if failed {
 					ink = warning
 				}
-				return layout.Inset{Top: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+				label := func(gtx layout.Context) layout.Dimensions {
 					style := material.Label(d.theme, 13, message)
 					style.Color, style.Font.Weight, style.MaxLines = ink, font.Medium, 2
 					return style.Layout(gtx)
-				})
+				}
+				actions := []layout.FlexChild{layout.Flexed(1, label)}
+				if d.updates.available() {
+					u := &d.updates
+					actions = append(actions, gap(8),
+						layout.Rigid(d.button(&u.whatsNew, "What's new", inputFill, textColor, true)), gap(8),
+						layout.Rigid(d.updateButton(&u.footerInstall, u.installLabel(), u.busy, !u.busy && !u.checking)))
+				}
+				return layout.Inset{Top: 6}.Layout(gtx, stack(layout.Horizontal, actions...))
 			}),
 		)
 	})
@@ -696,6 +706,16 @@ func (d *desktop) socksCheckButton(view sessionView) layout.Widget {
 			layout.Rigid(d.label(13, "Testing…", textColor, font.Medium)), gap(6),
 			layout.Rigid(socksCheckSpinner),
 		))
+	})
+}
+
+func (d *desktop) updateButton(click *widget.Clickable, name string, spinning, enabled bool) layout.Widget {
+	if !spinning {
+		return d.button(click, name, selection, textColor, enabled)
+	}
+	return panel(selection, 8, 0, func(gtx layout.Context) layout.Dimensions {
+		return layout.Inset{Top: 9, Bottom: 9, Left: 15, Right: 15}.Layout(gtx, stack(layout.Horizontal,
+			layout.Rigid(d.label(13, name, textColor, font.Medium)), gap(6), layout.Rigid(socksCheckSpinner)))
 	})
 }
 

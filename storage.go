@@ -18,13 +18,14 @@ type profile struct {
 }
 
 type settings struct {
-	Host             string `json:"host"`
-	Username         string `json:"username,omitempty"`
-	Password         string `json:"password,omitempty"`
-	Language         string `json:"language"`
-	LanguageOverride bool   `json:"languageOverride,omitempty"`
-	Port             int    `json:"port"`
-	Verbose          bool   `json:"verbose"`
+	Host               string `json:"host"`
+	Username           string `json:"username,omitempty"`
+	Password           string `json:"password,omitempty"`
+	Language           string `json:"language"`
+	LanguageOverride   bool   `json:"languageOverride,omitempty"`
+	Port               int    `json:"port"`
+	Verbose            bool   `json:"verbose"`
+	DisableUpdateCheck bool   `json:"disableUpdateCheck,omitempty"`
 }
 
 type configuration struct {

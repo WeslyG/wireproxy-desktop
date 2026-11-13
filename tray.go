@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"runtime"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -29,21 +30,33 @@ var trayIdleICO []byte
 
 type trayItems struct {
 	open, status, quit *systray.MenuItem
+	start, stop        *systray.MenuItem
 }
+
+type trayTunnelAction bool
+
+const (
+	startTrayTunnel trayTunnelAction = true
+	stopTrayTunnel  trayTunnelAction = false
+)
 
 type desktopTray struct {
 	window       atomic.Pointer[app.Window]
 	items        atomic.Pointer[trayItems]
 	quitting     atomic.Bool
 	wake         chan struct{}
+	tunnel       chan trayTunnelAction
 	exited       chan struct{}
 	stop         func()
 	lastLanguage string
 	lastActive   bool
+	lastStatus   string
+	lastCanStart bool
+	lastCanStop  bool
 }
 
 func newDesktopTray() *desktopTray {
-	t := &desktopTray{wake: make(chan struct{}, 1), exited: make(chan struct{})}
+	t := &desktopTray{wake: make(chan struct{}, 1), tunnel: make(chan trayTunnelAction, 1), exited: make(chan struct{})}
 	if traySupported() {
 		t.stop = startNativeTray(t.ready, func() { close(t.exited) })
 	}
@@ -51,12 +64,24 @@ func newDesktopTray() *desktopTray {
 }
 
 func (t *desktopTray) ready() {
+	if runtime.GOOS == "windows" {
+		systray.SetOnTapped(func() { go t.requestWindow() })
+	}
 	t.setIcon(false)
+	setTrayTooltip("Proxy off")
 	items := &trayItems{
 		status: systray.AddMenuItem("Proxy off", ""),
 		open:   systray.AddMenuItem("Open Wireproxy Desktop", ""),
-		quit:   systray.AddMenuItem("Quit", ""),
 	}
+	var start, stop <-chan struct{}
+	if runtime.GOOS == "windows" {
+		items.start = systray.AddMenuItem("Start tunnel", "")
+		items.stop = systray.AddMenuItem("Stop tunnel", "")
+		items.start.Disable()
+		items.stop.Disable()
+		start, stop = items.start.ClickedCh, items.stop.ClickedCh
+	}
+	items.quit = systray.AddMenuItem("Quit", "")
 	items.status.Disable()
 	t.items.Store(items)
 	t.invalidate()
@@ -65,6 +90,10 @@ func (t *desktopTray) ready() {
 			select {
 			case <-items.open.ClickedCh:
 				t.requestWindow()
+			case <-start:
+				t.requestTunnel(startTrayTunnel)
+			case <-stop:
+				t.requestTunnel(stopTrayTunnel)
 			case <-items.quit.ClickedCh:
 				t.quitting.Store(true)
 				t.requestWindow()
@@ -74,6 +103,38 @@ func (t *desktopTray) ready() {
 			}
 		}
 	}()
+}
+
+func (t *desktopTray) requestTunnel(action trayTunnelAction) {
+	select {
+	case t.tunnel <- action:
+	default:
+	}
+	t.invalidate()
+}
+
+func (d *desktop) trayTarget() (profile, bool) {
+	if server, ok := d.defaultProfile(); ok {
+		return server, true
+	}
+	if d.selected >= 0 && d.selected < len(d.cfg.Profiles) {
+		return d.cfg.Profiles[d.selected], true
+	}
+	return profile{}, false
+}
+
+func (t *desktopTray) applyTunnelAction(d *desktop, action trayTunnelAction) {
+	view := d.session.view(false)
+	if t.quitting.Load() {
+		return
+	}
+	if action == stopTrayTunnel {
+		d.session.stop()
+	} else if !view.active && d.storeStatus == "" {
+		if server, ok := d.trayTarget(); ok {
+			d.connectProfile(server)
+		}
+	}
 }
 
 func (t *desktopTray) requestWindow() {
@@ -98,8 +159,10 @@ func (t *desktopTray) awaitWindow(ui *desktop) bool {
 	ticker := time.NewTicker(3 * time.Second)
 	defer ticker.Stop()
 	for {
-		t.update(ui, ui.session.view(false).tunnelReady())
+		t.update(ui, ui.session.view(false))
 		select {
+		case action := <-t.tunnel:
+			t.applyTunnelAction(ui, action)
 		case <-t.wake:
 			return !t.quitting.Load()
 		case <-ticker.C:
@@ -110,22 +173,44 @@ func (t *desktopTray) awaitWindow(ui *desktop) bool {
 	}
 }
 
-func (t *desktopTray) update(d *desktop, active bool) {
+func (t *desktopTray) update(d *desktop, view sessionView) {
 	items := t.items.Load()
-	if items == nil || (t.lastLanguage == d.cfg.Settings.Language && t.lastActive == active) {
-		return
-	}
-	t.lastLanguage, t.lastActive = d.cfg.Settings.Language, active
+	active := view.tunnelReady()
 	status := "Proxy off"
 	if active {
 		status = "Proxy on"
 	}
+	if runtime.GOOS == "windows" {
+		status = view.status
+		if status == "" {
+			status = "Disconnected"
+		}
+	}
+	language := d.cfg.Settings.Language
+	_, hasTarget := d.trayTarget()
+	canStart := hasTarget && !view.active && d.storeStatus == ""
+	canStop := view.active && view.status != "Stopping"
+	if items == nil || (t.lastLanguage == language && t.lastActive == active && t.lastStatus == status &&
+		t.lastCanStart == canStart && t.lastCanStop == canStop) {
+		return
+	}
+	iconChanged := t.lastActive != active
+	t.lastLanguage, t.lastActive, t.lastStatus = language, active, status
+	t.lastCanStart, t.lastCanStop = canStart, canStop
 	update := func() {
 		items.status.SetTitle(d.tr(status))
 		items.open.SetTitle(d.tr("Open Wireproxy Desktop"))
 		items.quit.SetTitle(d.tr("Quit"))
-		t.setIcon(active)
-		systray.SetTooltip("Wireproxy Desktop · " + d.tr(status))
+		if items.start != nil {
+			items.start.SetTitle(d.tr("Start tunnel"))
+			items.stop.SetTitle(d.tr("Stop tunnel"))
+			setTrayItemEnabled(items.start, canStart)
+			setTrayItemEnabled(items.stop, canStop)
+		}
+		if iconChanged {
+			t.setIcon(active)
+		}
+		setTrayTooltip(d.tr(status))
 	}
 	if window := t.window.Load(); runtime.GOOS == "darwin" && window != nil {
 		// Gio waits for the client to finish processing each event. Run the
@@ -134,6 +219,23 @@ func (t *desktopTray) update(d *desktop, active bool) {
 		return
 	}
 	update()
+}
+
+func setTrayItemEnabled(item *systray.MenuItem, enabled bool) {
+	if enabled {
+		item.Enable()
+	} else {
+		item.Disable()
+	}
+}
+
+func setTrayTooltip(status string) {
+	tooltip := "Wireproxy Desktop · " + status
+	if runtime.GOOS == "windows" {
+		// systray copies the tooltip into a reused buffer without clearing its tail.
+		tooltip += strings.Repeat(" ", max(0, 64-len([]rune(tooltip))))
+	}
+	systray.SetTooltip(tooltip)
 }
 
 func (t *desktopTray) setIcon(active bool) {

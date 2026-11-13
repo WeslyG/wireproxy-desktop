@@ -83,7 +83,7 @@ func platformAsset(goos, arch string) string {
 	case "windows":
 		return "wireproxy-desktop-windows-" + arch + ".exe"
 	case "darwin":
-		return "wireproxy-desktop-macos-" + arch
+		return "wireproxy-desktop-macos-" + arch + ".zip"
 	default:
 		return "wireproxy-desktop-" + goos + "-" + arch
 	}
@@ -115,6 +115,14 @@ func fetchRelease(ctx context.Context, client *http.Client, endpoint, current, a
 		if asset.Name == assetName {
 			release.Asset = asset
 			return &release, nil
+		}
+	}
+	if strings.HasSuffix(assetName, ".zip") {
+		for _, asset := range release.Assets {
+			if asset.Name == strings.TrimSuffix(assetName, ".zip") {
+				release.Asset = asset
+				return &release, nil
+			}
 		}
 	}
 	return &release, errors.New("the release has no binary for this platform")

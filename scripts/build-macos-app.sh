@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -lt 1 ] || [ "$#" -gt 2 ] || [ "$(uname -s)" != Darwin ]; then
-    echo "Usage on macOS: sh scripts/build-macos-app.sh 'path/to/Wireproxy Desktop.app' [built-executable]" >&2
+if [ "$#" -lt 1 ] || [ "$#" -gt 3 ] || [ "$(uname -s)" != Darwin ]; then
+    echo "Usage on macOS: sh scripts/build-macos-app.sh 'path/to/Wireproxy Desktop.app' [built-executable] [version]" >&2
     exit 1
 fi
 
@@ -18,6 +18,12 @@ if [ -e "$output" ] || [ -L "$output" ]; then
 fi
 
 binary=${2:-}
+version=${3:-dev}
+case "$version" in
+    dev) version=0.0.0 ;;
+    *) version=${version#v}
+       printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' ;;
+esac
 case "$binary" in
     ""|/*) ;;
     *) binary="$PWD/$binary" ;;
@@ -36,7 +42,7 @@ else
 fi
 sips -s format icns assets/icon.png --out "$bundle/Contents/Resources/AppIcon.icns" >/dev/null
 
-cat > "$bundle/Contents/Info.plist" <<'EOF'
+cat > "$bundle/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -51,8 +57,10 @@ cat > "$bundle/Contents/Info.plist" <<'EOF'
     <string>APPL</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon.icns</string>
+    <key>CFBundleShortVersionString</key>
+    <string>$version</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$version</string>
 </dict>
 </plist>
 EOF

@@ -7,23 +7,30 @@ import (
 
 var systemLanguage = sync.OnceValue(func() string {
 	for _, locale := range preferredLocales() {
+		locale = strings.TrimSpace(locale)
+		if locale == "" {
+			continue
+		}
 		language := strings.FieldsFunc(strings.ToLower(locale), func(r rune) bool {
 			return strings.ContainsRune("-_.@", r)
 		})
-		if len(language) != 0 {
-			switch language[0] {
-			case "en", "ru":
-				return language[0]
-			}
+		if len(language) != 0 && language[0] == "ru" {
+			return "ru"
 		}
+		break
 	}
 	return "en"
 })
 
 var russian = map[string]string{
-	"Keychain access": "Доступ к Связке ключей",
-	"System language": "Язык системы",
-	"Continue":        "Продолжить",
+	"Start tunnel":                    "Запустить туннель",
+	"Stop tunnel":                     "Остановить туннель",
+	"Check for updates automatically": "Проверять обновления автоматически",
+	"Could not check for updates. Try again later.": "Не удалось проверить обновления. Попробуйте позже.",
+	"Download on GitHub":                            "Скачать на GitHub",
+	"Keychain access":                               "Доступ к Связке ключей",
+	"System language":                               "Язык системы",
+	"Continue":                                      "Продолжить",
 	"After you continue, macOS may ask for Keychain access. Wireproxy Desktop uses its own Keychain entry to load and save your profiles and proxy settings.": "После нажатия «Продолжить» macOS может запросить доступ к Связке ключей. Wireproxy Desktop использует собственную запись в Связке ключей для загрузки и сохранения ваших профилей и настроек прокси.",
 	"Protected storage":                                                            "Защищённое хранилище",
 	"Opening protected storage…":                                                   "Открываю защищённое хранилище…",
