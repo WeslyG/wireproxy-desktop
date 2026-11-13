@@ -71,6 +71,7 @@ type desktop struct {
 	storeDone                                             func(error)
 	keychainNotice                                        bool
 	keychainContinue                                      widget.Clickable
+	keychainRetry                                         widget.Clickable
 	storeStatus, migrationNotice                          string
 	cfg                                                   configuration
 	session                                               proxySession
@@ -182,7 +183,11 @@ func (d *desktop) feedback(message string, failed bool) {
 
 func (d *desktop) persist(cfg configuration, done func(error)) {
 	if d.loadErr != nil {
-		d.feedback("Unlock protected storage and restart before saving changes.", true)
+		message := "Unlock protected storage and restart before saving changes."
+		if d.canRetryKeychain() {
+			message = "Request Keychain access again before saving changes."
+		}
+		d.feedback(message, true)
 		done(d.loadErr)
 		return
 	}
@@ -487,6 +492,10 @@ func (d *desktop) field(editor *widget.Editor, hint string, height unit.Dp) layo
 	})
 }
 
+func (d *desktop) canRetryKeychain() bool {
+	return runtime.GOOS == "darwin" && d.store.scope != "" && d.loadErr != nil && d.storeStatus == ""
+}
+
 func (d *desktop) layout(gtx layout.Context) {
 	if d.keychainNotice {
 		if d.keychainContinue.Clicked(gtx) {
@@ -508,6 +517,9 @@ func (d *desktop) layout(gtx layout.Context) {
 			})
 			return
 		}
+	}
+	if d.canRetryKeychain() && d.keychainRetry.Clicked(gtx) {
+		d.loadProtectedConfig(d.session.notify)
 	}
 	view := d.session.view(d.page == 2)
 	if d.storeStatus == "" {
@@ -549,6 +561,8 @@ func (d *desktop) layout(gtx layout.Context) {
 				message, failed := d.message, d.messageError
 				if d.storeStatus != "" {
 					message, failed = d.tr(d.storeStatus), false
+				} else if d.canRetryKeychain() {
+					message, failed = d.tr("Could not open protected storage")+" · "+d.loadErr.Error(), true
 				} else if message != "" && gtx.Now.Before(d.messageUntil) {
 					gtx.Execute(op.InvalidateCmd{At: d.messageUntil})
 				} else if view.checking {
@@ -572,7 +586,10 @@ func (d *desktop) layout(gtx layout.Context) {
 					return style.Layout(gtx)
 				}
 				actions := []layout.FlexChild{layout.Flexed(1, label)}
-				if d.updates.available() {
+				if d.canRetryKeychain() {
+					actions = append(actions, gap(8),
+						layout.Rigid(d.button(&d.keychainRetry, "Request access again", selection, textColor, true)))
+				} else if d.updates.available() {
 					u := &d.updates
 					actions = append(actions, gap(8),
 						layout.Rigid(d.button(&u.whatsNew, "What's new", inputFill, textColor, true)), gap(8),

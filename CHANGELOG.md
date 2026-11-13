@@ -1,5 +1,11 @@
 # Changelog
 
+## v1.0.2
+
+- Connect and disconnect from the macOS menu bar. On macOS and Windows, connecting from the tray uses the default server and requires one to be configured.
+- Retry macOS Keychain access after an error without restarting the app.
+- Refine update controls, Windows tray and window behavior, and macOS app packaging.
+
 ## v1.0.1
 
 - Fix a macOS startup freeze and use native window controls. The Dock reopens the window at its last position.

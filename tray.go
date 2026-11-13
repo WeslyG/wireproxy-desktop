@@ -40,6 +40,13 @@ const (
 	stopTrayTunnel  trayTunnelAction = false
 )
 
+func trayTunnelLabels() (string, string) {
+	if runtime.GOOS == "darwin" {
+		return "Connect", "Disconnect"
+	}
+	return "Start tunnel", "Stop tunnel"
+}
+
 type desktopTray struct {
 	window       atomic.Pointer[app.Window]
 	items        atomic.Pointer[trayItems]
@@ -74,9 +81,10 @@ func (t *desktopTray) ready() {
 		open:   systray.AddMenuItem("Open Wireproxy Desktop", ""),
 	}
 	var start, stop <-chan struct{}
-	if runtime.GOOS == "windows" {
-		items.start = systray.AddMenuItem("Start tunnel", "")
-		items.stop = systray.AddMenuItem("Stop tunnel", "")
+	if runtime.GOOS == "windows" || runtime.GOOS == "darwin" {
+		startLabel, stopLabel := trayTunnelLabels()
+		items.start = systray.AddMenuItem(startLabel, "")
+		items.stop = systray.AddMenuItem(stopLabel, "")
 		items.start.Disable()
 		items.stop.Disable()
 		start, stop = items.start.ClickedCh, items.stop.ClickedCh
@@ -113,16 +121,6 @@ func (t *desktopTray) requestTunnel(action trayTunnelAction) {
 	t.invalidate()
 }
 
-func (d *desktop) trayTarget() (profile, bool) {
-	if server, ok := d.defaultProfile(); ok {
-		return server, true
-	}
-	if d.selected >= 0 && d.selected < len(d.cfg.Profiles) {
-		return d.cfg.Profiles[d.selected], true
-	}
-	return profile{}, false
-}
-
 func (t *desktopTray) applyTunnelAction(d *desktop, action trayTunnelAction) {
 	view := d.session.view(false)
 	if t.quitting.Load() {
@@ -131,7 +129,7 @@ func (t *desktopTray) applyTunnelAction(d *desktop, action trayTunnelAction) {
 	if action == stopTrayTunnel {
 		d.session.stop()
 	} else if !view.active && d.storeStatus == "" {
-		if server, ok := d.trayTarget(); ok {
+		if server, ok := d.defaultProfile(); ok {
 			d.connectProfile(server)
 		}
 	}
@@ -187,7 +185,7 @@ func (t *desktopTray) update(d *desktop, view sessionView) {
 		}
 	}
 	language := d.cfg.Settings.Language
-	_, hasTarget := d.trayTarget()
+	_, hasTarget := d.defaultProfile()
 	canStart := hasTarget && !view.active && d.storeStatus == ""
 	canStop := view.active && view.status != "Stopping"
 	if items == nil || (t.lastLanguage == language && t.lastActive == active && t.lastStatus == status &&
@@ -202,8 +200,9 @@ func (t *desktopTray) update(d *desktop, view sessionView) {
 		items.open.SetTitle(d.tr("Open Wireproxy Desktop"))
 		items.quit.SetTitle(d.tr("Quit"))
 		if items.start != nil {
-			items.start.SetTitle(d.tr("Start tunnel"))
-			items.stop.SetTitle(d.tr("Stop tunnel"))
+			startLabel, stopLabel := trayTunnelLabels()
+			items.start.SetTitle(d.tr(startLabel))
+			items.stop.SetTitle(d.tr(stopLabel))
 			setTrayItemEnabled(items.start, canStart)
 			setTrayItemEnabled(items.stop, canStop)
 		}
