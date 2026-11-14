@@ -81,20 +81,21 @@ func decodeConfig(data []byte) (configuration, error) {
 	return cfg, nil
 }
 
-func (s configStore) load() (configuration, string, error) {
+func (s configStore) load() (configuration, string, bool, error) {
 	return loadStoredConfig(s.legacyPath, func() ([]byte, error) { return readProtectedConfig(s.scope) },
 		func(data []byte) error { return writeProtectedConfig(s.scope, data) })
 }
 
-func loadStoredConfig(path string, read func() ([]byte, error), write func([]byte) error) (configuration, string, error) {
+// The third result confirms that a configuration was read from protected storage.
+func loadStoredConfig(path string, read func() ([]byte, error), write func([]byte) error) (configuration, string, bool, error) {
 	data, err := read()
 	if err != nil && !errors.Is(err, errConfigMissing) {
-		return configuration{}, "", err
+		return configuration{}, "", false, err
 	}
 	if err == nil {
 		cfg, decodeErr := decodeConfig(data)
 		if decodeErr != nil {
-			return cfg, "", decodeErr
+			return cfg, "", false, decodeErr
 		}
 		if old, readErr := os.ReadFile(path); readErr == nil {
 			// Preserve a legacy file written independently by an older version.
@@ -102,48 +103,48 @@ func loadStoredConfig(path string, read func() ([]byte, error), write func([]byt
 				a, _ := json.Marshal(cfg)
 				b, _ := json.Marshal(legacy)
 				if bytes.Equal(a, b) {
-					return cfg, removeLegacyConfig(path), nil
+					return cfg, removeLegacyConfig(path), true, nil
 				}
 			}
-			return cfg, "An older configuration file still exists and differs from protected storage.", nil
+			return cfg, "An older configuration file still exists and differs from protected storage.", true, nil
 		} else if !errors.Is(readErr, os.ErrNotExist) {
-			return cfg, "Could not inspect the old configuration file.", nil
+			return cfg, "Could not inspect the old configuration file.", true, nil
 		}
-		return cfg, "", nil
+		return cfg, "", true, nil
 	}
 	legacy, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return defaultConfig(), "", nil
+		return defaultConfig(), "", false, nil
 	}
 	if err != nil {
-		return configuration{}, "", err
+		return configuration{}, "", false, err
 	}
 	cfg, err := decodeConfig(legacy)
 	if err != nil {
-		return cfg, "", err
+		return cfg, "", false, err
 	}
 	data, err = json.Marshal(cfg)
 	if err != nil {
-		return cfg, "", err
+		return cfg, "", false, err
 	}
 	if err := write(data); err != nil {
-		return cfg, "", fmt.Errorf("migrate configuration: %w", err)
+		return cfg, "", false, fmt.Errorf("migrate configuration: %w", err)
 	}
 	saved, err := read()
 	if err != nil {
-		return cfg, "", fmt.Errorf("verify migrated configuration: %w", err)
+		return cfg, "", false, fmt.Errorf("verify migrated configuration: %w", err)
 	}
 	if !bytes.Equal(data, saved) {
-		return cfg, "", errors.New("could not verify the migrated configuration")
+		return cfg, "", false, errors.New("could not verify the migrated configuration")
 	}
 	current, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return cfg, "", nil
+		return cfg, "", true, nil
 	}
 	if err != nil || !bytes.Equal(legacy, current) {
-		return cfg, "The old configuration file changed during migration.", nil
+		return cfg, "The old configuration file changed during migration.", true, nil
 	}
-	return cfg, removeLegacyConfig(path), nil
+	return cfg, removeLegacyConfig(path), true, nil
 }
 
 func removeLegacyConfig(path string) string {
@@ -158,5 +159,17 @@ func (s configStore) save(cfg configuration) error {
 	if err != nil {
 		return err
 	}
-	return writeProtectedConfig(s.scope, data)
+	if err := writeProtectedConfig(s.scope, data); err != nil {
+		return err
+	}
+	prefs := s.startupPreferences()
+	prefs.rememberLanguage(cfg.Settings.Language)
+	if prefs.dir != "" && prefs.needsKeychainNotice() {
+		// Creating a new item does not establish that the app can read it.
+		// Leave confirmation to the next successful read if verification fails.
+		if saved, err := readProtectedConfig(s.scope); err == nil && bytes.Equal(saved, data) {
+			prefs.recordVerifiedKeychainRead()
+		}
+	}
+	return nil
 }

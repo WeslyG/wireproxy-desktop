@@ -21,7 +21,7 @@ func TestConfigMigrationVerifiesBeforeRemovingJSON(t *testing.T) {
 				t.Fatal(err)
 			}
 			var data []byte
-			cfg, _, err := loadStoredConfig(path, func() ([]byte, error) {
+			cfg, _, verified, err := loadStoredConfig(path, func() ([]byte, error) {
 				if data == nil {
 					return nil, errConfigMissing
 				}
@@ -35,10 +35,10 @@ func TestConfigMigrationVerifiesBeforeRemovingJSON(t *testing.T) {
 			})
 			old, readErr := os.ReadFile(path)
 			if verify {
-				if err != nil || !errors.Is(readErr, os.ErrNotExist) || cfg.Settings.Port != 1081 || len(cfg.Profiles) != 1 {
+				if err != nil || !verified || !errors.Is(readErr, os.ErrNotExist) || cfg.Settings.Port != 1081 || len(cfg.Profiles) != 1 {
 					t.Fatalf("migration failed: %v, legacy read: %v", err, readErr)
 				}
-			} else if err == nil || readErr != nil || !bytes.Equal(legacy, old) {
+			} else if err == nil || verified || readErr != nil || !bytes.Equal(legacy, old) {
 				t.Fatal("unverified migration failed to preserve the original")
 			}
 		})

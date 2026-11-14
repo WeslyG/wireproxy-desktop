@@ -85,7 +85,7 @@ func (u *updateControls) download() {
 }
 
 func (u *updateControls) update(gtx layout.Context, d *desktop) {
-	if !u.started && d.storeStatus == "" {
+	if !u.started && !d.keychainNotice && d.storeStatus == "" {
 		u.started = true
 		u.autoCheck.Value = !d.cfg.Settings.DisableUpdateCheck
 		if _, stable := stableVersion(version); stable && u.autoCheck.Value {

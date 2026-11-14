@@ -122,8 +122,12 @@ func newDesktop(store configStore, storeErr error, notify func()) *desktop {
 	case storeErr != nil:
 		d.applyLoadedConfig(configStoreResult{err: storeErr})
 	case runtime.GOOS == "darwin":
-		d.cfg.Settings.Language = store.startupLanguage()
-		d.keychainNotice = true
+		prefs := store.startupPreferences()
+		d.cfg.Settings.Language = prefs.language()
+		d.keychainNotice = prefs.needsKeychainNotice()
+		if !d.keychainNotice {
+			d.loadProtectedConfig(notify)
+		}
 	default:
 		d.loadProtectedConfig(notify)
 	}
@@ -133,9 +137,11 @@ func newDesktop(store configStore, storeErr error, notify func()) *desktop {
 func (d *desktop) loadProtectedConfig(notify func()) {
 	d.storeStatus = "Opening protected storage…"
 	go func() {
-		cfg, notice, err := d.store.load()
-		if err == nil {
-			d.store.rememberStartupLanguage(cfg.Settings.Language)
+		cfg, notice, verified, err := d.store.load()
+		if verified {
+			prefs := d.store.startupPreferences()
+			prefs.recordVerifiedKeychainRead()
+			prefs.rememberLanguage(cfg.Settings.Language)
 		}
 		d.storeResults <- configStoreResult{cfg: cfg, notice: notice, err: err}
 		notify()
@@ -194,9 +200,6 @@ func (d *desktop) persist(cfg configuration, done func(error)) {
 	d.storeStatus, d.storeDone = "Saving to protected storage…", done
 	go func() {
 		err := d.store.save(cfg)
-		if err == nil {
-			d.store.rememberStartupLanguage(cfg.Settings.Language)
-		}
 		d.storeResults <- configStoreResult{cfg: cfg, err: err}
 		d.session.notify()
 	}()
