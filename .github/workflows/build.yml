@@ -68,7 +68,7 @@ jobs:
             Linux)
               export CGO_ENABLED=1
               go test -tags novulkan ./...
-              go build -tags novulkan -trimpath -ldflags="$flags" -o "dist/wireproxy-desktop-${{ matrix.target }}" .
+              sh scripts/build-linux.sh "$PWD/dist" "$version"
               ;;
             macOS)
               export CGO_ENABLED=1

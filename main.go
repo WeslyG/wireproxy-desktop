@@ -3,19 +3,18 @@ package main
 import (
 	"fmt"
 	"os"
-	"runtime"
-	"slices"
 
-	"gioui.org/app"
-	"gioui.org/io/system"
-	"gioui.org/op"
-	"gioui.org/widget"
+	"github.com/WeslyG/wireproxy-desktop/internal/desktop"
+	"github.com/WeslyG/wireproxy-desktop/internal/tunnel"
+	"github.com/WeslyG/wireproxy-desktop/internal/updater"
 )
+
+var version = "dev"
 
 func main() {
 	args := os.Args[1:]
-	if len(args) == 1 && args[0] == probeWorkerFlag {
-		if err := runProbeWorker(os.Stdin, os.Stdout); err != nil {
+	if len(args) == 1 && args[0] == tunnel.ProbeFlag {
+		if err := tunnel.RunProbeWorker(os.Stdin, os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -25,138 +24,21 @@ func main() {
 		fmt.Println(version)
 		return
 	}
-	if len(args) > 0 && args[0] == applyUpdateFlag {
-		if err := runUpdateHelper(args[1:]); err != nil {
+	if len(args) > 0 && args[0] == updater.ApplyFlag {
+		if err := updater.RunHelper(args[1:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	if len(os.Args) > 1 && os.Args[1] == workerFlag {
-		if err := runWorker(os.Stdin); err != nil {
+	if len(os.Args) > 1 && os.Args[1] == tunnel.WorkerFlag {
+		if err := tunnel.RunWorker(os.Stdin); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 		return
 	}
-	cleanupIndex := slices.Index(args, "--cleanup-update")
-	restarting := cleanupIndex >= 0 && cleanupIndex+1 < len(args)
-	instance, err := acquireDesktopInstance(restarting)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	if instance == nil {
-		fmt.Fprintln(os.Stderr, "Wireproxy Desktop is already running. Open it from the system tray.")
-		return
-	}
-	defer instance.Close()
-	if restarting {
-		if executable, err := os.Executable(); err == nil {
-			go cleanUpdateHelper(executable, args[cleanupIndex+1])
-		}
-	}
-
-	tray := newDesktopTray()
-	tray.watchDockReopen()
-	go func() {
-		err := runDesktop(args, tray)
-		tray.close()
-		_ = instance.Close()
-		if err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
-		os.Exit(0)
-	}()
-	app.Main()
+	desktop.Run(args, version)
 }
 
-func runDesktop(args []string, tray *desktopTray) error {
-	portable := slices.Contains(args, "--portable")
-	store, err := openConfigStore(portable)
-	ui := newDesktop(store, err, tray.invalidate)
-	ui.updates.init(tray.invalidate, portable)
-	defer ui.updates.shutdown()
-	defer func() {
-		if done := ui.session.stop(); done != nil {
-			<-done
-		}
-	}()
-	defer ui.cancelConnectionProbe()
-	if slices.Contains(args, "--update-error") {
-		ui.feedback("Update installation failed. The previous version is still available.", true)
-	}
-	for !tray.quitting.Load() {
-		background, err := runWindow(ui, tray)
-		if err != nil || !background || tray.quitting.Load() || !tray.awaitWindow(ui) {
-			return err
-		}
-	}
-	return nil
-}
-
-func runWindow(ui *desktop, tray *desktopTray) (bool, error) {
-	window := new(app.Window)
-	nativeTitle := runtime.GOOS == "darwin"
-	window.Option(app.Title("Wireproxy Desktop"), app.Decorated(nativeTitle), app.Size(1020, 720), app.MinSize(760, 630))
-	ui.updates.window = window
-	tray.window.Store(window)
-	defer tray.window.Store(nil)
-	customTitle, background := !nativeTitle, false
-	closeAfterSave := false
-	var decoration widget.Decorations
-	var ops op.Ops
-	var placement windowPlacement
-	for {
-		switch event := window.Event().(type) {
-		case app.ConfigEvent:
-			customTitle = !event.Config.Decorated
-			decoration.Maximized = event.Config.Mode == app.Maximized
-		case *app.ClosingEvent:
-			if ui.storeDone != nil {
-				event.Abort()
-				closeAfterSave = true
-				continue
-			}
-			ui.cancelConnectionProbe()
-			placement.save(ui.store.scope)
-			background = !tray.quitting.Load() && ui.updates.helper == nil && tray.available()
-		case app.FrameEvent:
-			gtx := app.NewContext(&ops, event)
-			ui.updateConfigStore()
-			select {
-			case action := <-tray.tunnel:
-				tray.applyTunnelAction(ui, action)
-			default:
-			}
-			actions := system.Action(0)
-			if customTitle {
-				actions = decoration.Update(gtx)
-			}
-			select {
-			case <-tray.wake:
-				actions |= system.ActionRaise
-			default:
-			}
-			if (tray.quitting.Load() || closeAfterSave) && ui.storeDone == nil {
-				actions = system.ActionClose
-			} else if actions&system.ActionClose != 0 && ui.storeDone != nil {
-				closeAfterSave = true
-				actions &^= system.ActionClose
-			}
-			if actions != 0 {
-				window.Perform(actions)
-			}
-			ui.updates.update(gtx, ui)
-			ui.layoutWindow(gtx, &decoration, customTitle)
-			event.Frame(gtx.Ops)
-			tray.update(ui, ui.session.view(false))
-		case app.DestroyEvent:
-			return background, event.Err
-		default:
-			configureNativeWindow(window, event)
-			placement.attach(event, ui.store.scope)
-		}
-	}
-}
+//go:generate go run github.com/tc-hib/go-winres@v0.3.3 simply --arch amd64,arm64 --manifest gui --icon assets/favicon.ico --out icon

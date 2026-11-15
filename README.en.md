@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | Windows | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-amd64.exe) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-arm64.exe) |
 | macOS | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64.zip) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64.zip) |
-| Linux | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
+| Linux | [x64 archive](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64.tar.gz) · [Binary](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [ARM64 archive](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64.tar.gz) · [Binary](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
 
 ## System requirements
 
@@ -35,6 +35,12 @@ The prebuilt binary runs under a regular user account. It requires no installer,
 
 The table lists the [build targets](.github/workflows/build.yml). Other Linux distributions need compatible system libraries. On Linux, you may need to make the downloaded file executable. For example, on Linux x64 run `chmod +x ./wireproxy-desktop-linux-amd64`, then `./wireproxy-desktop-linux-amd64`.
 
+### Install in the Linux applications menu
+
+Extract the `.tar.gz` archive and run `sh install.sh` from the extracted directory. The script installs the app in `~/.local/bin` and adds Wireproxy Desktop with its icon to the applications menu. It runs without `sudo`.
+
+On GNOME Shell 51, run `sh install.sh --gnome` to also install the Wireproxy Quick Settings tile. If GNOME has not discovered the extension, sign out and back in, then run the `gnome-extensions enable` command printed by the installer. Set a **Default server** in the app. The tile starts and stops that profile in the background and shows **Connected** after the handshake is confirmed. Closing the window leaves the active tunnel running.
+
 ### First launch on macOS
 
 1. Open ** → About This Mac**. Confirm that you have macOS 15 Sequoia or later. Download the **ARM64** ZIP for Apple Silicon or the **x64** ZIP for Intel.
@@ -44,6 +50,8 @@ The table lists the [build targets](.github/workflows/build.yml). Other Linux di
 5. Read the app’s Keychain explanation and click **Continue**. Wireproxy Desktop uses its own entry to store profiles and proxy settings.
 
 If macOS reports that the app is damaged or will damage your computer, stop and verify the source and the ZIP’s checksum. [macOS alerts](https://support.apple.com/en-us/102445)
+
+To update an installation from the Linux archive, download the new archive and run `sh install.sh` again. The installer updates an existing GNOME extension alongside the app. To uninstall, run `sh install.sh --uninstall`. Saved profiles remain in the system keyring.
 
 ## Connect
 

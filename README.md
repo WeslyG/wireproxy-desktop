@@ -21,7 +21,7 @@
 | --- | --- | --- |
 | Windows | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-amd64.exe) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-arm64.exe) |
 | macOS | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64.zip) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64.zip) |
-| Linux | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
+| Linux | [Архив x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64.tar.gz) · [Бинарник](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [Архив ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64.tar.gz) · [Бинарник](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
 
 ## Системные требования
 
@@ -35,6 +35,12 @@
 
 Таблица указывает [целевые среды сборки](.github/workflows/build.yml). На других дистрибутивах Linux нужны совместимые системные библиотеки. На Linux скачанному файлу может потребоваться право на выполнение. Например, для Linux x64 выполните `chmod +x ./wireproxy-desktop-linux-amd64`, затем `./wireproxy-desktop-linux-amd64`.
 
+### Установка в меню приложений Linux
+
+Распакуйте архив `.tar.gz` и запустите `sh install.sh` из распакованной папки. Скрипт без `sudo` устанавливает приложение в `~/.local/bin` и добавляет Wireproxy Desktop с фирменной иконкой в меню приложений.
+
+В GNOME Shell 51 запустите `sh install.sh --gnome`, чтобы также установить плитку Wireproxy в быстрых настройках. Если GNOME ещё не видит расширение, выйдите из сеанса, войдите снова и выполните команду `gnome-extensions enable`, которую выведет установщик. Выберите **Основной сервер** в приложении. Плитка запускает и останавливает этот профиль в фоне, а **Connected** появляется после подтверждения handshake. Активный туннель продолжает работать после закрытия окна.
+
 ### Первый запуск на macOS
 
 1. Откройте ** → Об этом Mac**. Убедитесь, что установлена macOS 15 Sequoia или новее. Для Mac с чипом Apple скачайте ZIP для **ARM64**, для Mac с процессором Intel — ZIP для **x64**.
@@ -44,6 +50,8 @@
 5. В приложении прочитайте пояснение о Связке ключей и нажмите **Продолжить**. Wireproxy Desktop использует свою запись для профилей и настроек прокси.
 
 Если macOS сообщает, что приложение повреждено или может навредить компьютеру, остановитесь и проверьте источник и контрольную сумму архива. [Предупреждения macOS](https://support.apple.com/ru-ru/102445)
+
+Чтобы обновить установку из архива Linux, скачайте новый архив и снова запустите `sh install.sh`. Ранее установленное расширение GNOME обновится вместе с приложением. Для удаления запустите `sh install.sh --uninstall`. Сохранённые профили останутся в системном хранилище.
 
 ## Подключение
 

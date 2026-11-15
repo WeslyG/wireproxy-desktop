@@ -1,0 +1,7 @@
+{
+  "uuid": "wireproxy-quick-settings@weslyg.github.com",
+  "name": "Wireproxy Desktop Quick Settings",
+  "description": "Control the primary Wireproxy Desktop profile from Quick Settings.",
+  "shell-version": ["51"],
+  "url": "https://github.com/WeslyG/wireproxy-desktop"
+}
