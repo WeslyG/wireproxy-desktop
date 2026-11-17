@@ -60,6 +60,7 @@ func startNativeTray(ready, exited func()) func() {
 }
 
 func (t *desktopTray) watchDockReopen() {
+	installWindowPositionTracking()
 	dockReopenTray = t
 	C.observeDockReopen()
 }

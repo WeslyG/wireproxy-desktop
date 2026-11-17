@@ -15,13 +15,15 @@
 
 ## Скачать
 
-[Последний релиз](https://github.com/WeslyG/wireproxy-desktop/releases/latest) · [Все релизы](https://github.com/WeslyG/wireproxy-desktop/releases) · [SHA256SUMS](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/SHA256SUMS)
+[Последний релиз](https://github.com/WeslyG/wireproxy-desktop/releases/latest) · [Все релизы](https://github.com/WeslyG/wireproxy-desktop/releases)
 
 | Система | x64 | ARM64 |
 | --- | --- | --- |
-| Windows | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-amd64.exe) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-arm64.exe) |
-| macOS | [Скачать x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64.zip) | [Скачать ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64.zip) |
-| Linux | [Архив x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64.tar.gz) · [Бинарник](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [Архив ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64.tar.gz) · [Бинарник](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
+| Windows | `windows-amd64-vX.Y.Z.exe` | `windows-arm64-vX.Y.Z.exe` |
+| macOS | `macos-amd64-vX.Y.Z.zip` | `macos-arm64-vX.Y.Z.zip` |
+| Linux | `linux-amd64-vX.Y.Z.tar.gz` или `.x86_64.rpm` | `linux-arm64-vX.Y.Z.tar.gz` или `.aarch64.rpm` |
+
+Скачайте подходящий файл из списка Assets релиза. Имена начинаются с `wireproxy-desktop-` и содержат версию. У старых релизов имена файлов без версии. Если установленная старая версия не находит первое обновление с новыми именами, скачайте его вручную.
 
 ## Системные требования
 
@@ -37,6 +39,8 @@
 
 ### Установка в меню приложений Linux
 
+В Fedora установите подходящий RPM командой `sudo dnf install ./wireproxy-desktop-*.rpm`. В GNOME 51 один раз включите **Wireproxy Desktop Quick Settings** в приложении «Расширения». Если оно ещё не появилось в списке, выйдите из сеанса и войдите снова. Команда `sudo dnf remove wireproxy-desktop` удаляет приложение, регистрацию D-Bus и расширение вместе. Профили остаются в системном хранилище. Если раньше устанавливали версию из архива, перед установкой RPM удалите её командой `sh install.sh --uninstall` из того архива.
+
 Распакуйте архив `.tar.gz` и запустите `sh install.sh` из распакованной папки. Скрипт без `sudo` устанавливает приложение в `~/.local/bin` и добавляет Wireproxy Desktop с фирменной иконкой в меню приложений.
 
 В GNOME Shell 51 запустите `sh install.sh --gnome`, чтобы также установить плитку Wireproxy в быстрых настройках. Если GNOME ещё не видит расширение, выйдите из сеанса, войдите снова и выполните команду `gnome-extensions enable`, которую выведет установщик. Выберите **Основной сервер** в приложении. Плитка запускает и останавливает этот профиль в фоне, а **Connected** появляется после подтверждения handshake. Активный туннель продолжает работать после закрытия окна.
@@ -44,7 +48,7 @@
 ### Первый запуск на macOS
 
 1. Откройте ** → Об этом Mac**. Убедитесь, что установлена macOS 15 Sequoia или новее. Для Mac с чипом Apple скачайте ZIP для **ARM64**, для Mac с процессором Intel — ZIP для **x64**.
-2. Скачайте ZIP из [GitHub Releases](https://github.com/WeslyG/wireproxy-desktop/releases/latest) и сверьте его SHA-256 со строкой для этого файла в `SHA256SUMS`. Распакуйте архив, перенесите **Wireproxy Desktop.app** в папку **Программы** и откройте его двойным щелчком.
+2. Скачайте ZIP из [GitHub Releases](https://github.com/WeslyG/wireproxy-desktop/releases/latest) и сверьте его SHA-256 со строкой для этого файла в `SHA256SUMS-vX.Y.Z`. Распакуйте архив, перенесите **Wireproxy Desktop.app** в папку **Программы** и откройте его двойным щелчком.
 3. У приложения есть подпись ad hoc. Подпись Developer ID и нотариализация Apple отсутствуют. Если macOS сообщит, что не может проверить разработчика или приложение, закройте предупреждение и откройте **Системные настройки → Конфиденциальность и безопасность**. Прокрутите до раздела **Безопасность** и нажмите **Всё равно открыть** рядом с сообщением о Wireproxy Desktop. Кнопка доступна примерно час после попытки запуска. Если её нет, ещё раз попробуйте открыть приложение в Finder.
 4. Подтвердите открытие и, если macOS попросит, введите пароль учётной записи Mac. macOS запомнит исключение для этого приложения. [Инструкция Apple](https://support.apple.com/ru-ru/102445)
 5. В приложении прочитайте пояснение о Связке ключей и нажмите **Продолжить**. Wireproxy Desktop использует свою запись для профилей и настроек прокси.

@@ -9,14 +9,50 @@ package desktop
 static NSString *const windowPositionKey = @"WireproxyDesktopWindowTopLeft";
 static char tracksPositionKey;
 
-static void trackWindowPosition(uintptr_t viewRef) {
-	NSView *view = (NSView *)viewRef;
-	NSWindow *window = view.window;
-	if (!window || objc_getAssociatedObject(window, &tracksPositionKey)) {
-		return;
+static void restoreWindowPosition(NSWindow *window) {
+	NSString *position = [NSUserDefaults.standardUserDefaults stringForKey:windowPositionKey];
+	if (position) {
+		NSPoint topLeft = NSPointFromString(position);
+		for (NSScreen *screen in NSScreen.screens) {
+			if (!NSPointInRect(NSMakePoint(topLeft.x, topLeft.y - 1), screen.frame)) {
+				continue;
+			}
+			NSRect visible = screen.visibleFrame;
+			NSSize size = window.frame.size;
+			topLeft.x = MAX(NSMinX(visible), MIN(topLeft.x, NSMaxX(visible) - size.width));
+			topLeft.y = MIN(NSMaxY(visible), MAX(topLeft.y, NSMinY(visible) + size.height));
+			[window setFrameTopLeftPoint:topLeft];
+			break;
+		}
 	}
-	objc_setAssociatedObject(window, &tracksPositionKey, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+	objc_setAssociatedObject(window, &tracksPositionKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
 
+@interface NSWindow (WireproxyPosition)
+- (void)wireproxy_orderWindow:(NSWindowOrderingMode)place relativeTo:(NSInteger)otherWindowNumber;
+@end
+
+@implementation NSWindow (WireproxyPosition)
+- (void)wireproxy_orderWindow:(NSWindowOrderingMode)place relativeTo:(NSInteger)otherWindowNumber {
+	// Restore after Gio configures and cascades the window, before AppKit shows it.
+	// Only intercept our Gio window, excluding menus and system dialogs.
+	if (place != NSWindowOut && [self.title isEqualToString:@"Wireproxy Desktop"] &&
+		[self.contentView isKindOfClass:NSClassFromString(@"GioView")] &&
+		!objc_getAssociatedObject(self, &tracksPositionKey)) {
+		objc_setAssociatedObject(self, &tracksPositionKey, @NO, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+		restoreWindowPosition(self);
+	}
+	[self wireproxy_orderWindow:place relativeTo:otherWindowNumber];
+}
+@end
+
+static void installWindowPositionTracking(void) {
+	static dispatch_once_t installed;
+	dispatch_once(&installed, ^{
+		Method original = class_getInstanceMethod(NSWindow.class, @selector(orderWindow:relativeTo:));
+		Method replacement = class_getInstanceMethod(NSWindow.class, @selector(wireproxy_orderWindow:relativeTo:));
+		method_exchangeImplementations(original, replacement);
+	});
 	static dispatch_once_t observer;
 	dispatch_once(&observer, ^{
 		[[NSNotificationCenter defaultCenter]
@@ -24,7 +60,7 @@ static void trackWindowPosition(uintptr_t viewRef) {
 			object:nil queue:nil usingBlock:^(NSNotification *notification) {
 				NSWindow *moved = notification.object;
 				if (![objc_getAssociatedObject(moved, &tracksPositionKey) boolValue] ||
-					!moved.visible || moved.zoomed || (moved.styleMask & NSWindowStyleMaskFullScreen)) {
+					!moved.visible || moved.miniaturized || moved.zoomed || (moved.styleMask & NSWindowStyleMaskFullScreen)) {
 					return;
 				}
 				NSRect frame = moved.frame;
@@ -32,40 +68,12 @@ static void trackWindowPosition(uintptr_t viewRef) {
 				[NSUserDefaults.standardUserDefaults setObject:NSStringFromPoint(topLeft) forKey:windowPositionKey];
 			}];
 	});
-
-	// Gio positions its window after attaching the view. Restore our position
-	// after that work, before allowing move notifications to save a new one.
-	dispatch_async(dispatch_get_main_queue(), ^{
-		if (view.window != window) {
-			return;
-		}
-		NSString *position = [NSUserDefaults.standardUserDefaults stringForKey:windowPositionKey];
-		if (position) {
-			NSPoint topLeft = NSPointFromString(position);
-			for (NSScreen *screen in NSScreen.screens) {
-				if (!NSPointInRect(NSMakePoint(topLeft.x, topLeft.y - 1), screen.frame)) {
-					continue;
-				}
-				NSRect visible = screen.visibleFrame;
-				NSSize size = window.frame.size;
-				topLeft.x = MAX(NSMinX(visible), MIN(topLeft.x, NSMaxX(visible) - size.width));
-				topLeft.y = MIN(NSMaxY(visible), MAX(topLeft.y, NSMinY(visible) + size.height));
-				[window setFrameTopLeftPoint:topLeft];
-				break;
-			}
-		}
-		objc_setAssociatedObject(window, &tracksPositionKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-	});
 }
 */
 import "C"
 
 import "gioui.org/app"
 
-func configureNativeWindow(window *app.Window, event any) {
-	if view, ok := event.(app.AppKitViewEvent); ok && view.Valid() {
-		window.Run(func() {
-			C.trackWindowPosition(C.uintptr_t(view.View))
-		})
-	}
-}
+func installWindowPositionTracking() { C.installWindowPositionTracking() }
+
+func configureNativeWindow(*app.Window, any) {}

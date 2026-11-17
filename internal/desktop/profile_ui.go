@@ -173,8 +173,18 @@ func (d *desktop) endEdit() {
 	d.refreshProtocol()
 }
 
+const renameLockedMessage = "Disconnect this server before renaming it."
+
+func (d *desktop) profileNameLocked(view tunnel.View) bool {
+	return d.selected >= 0 && view.Active && view.Profile == d.cfg.Profiles[d.selected].Name
+}
+
 func (d *desktop) saveProfile() {
 	p := config.Profile{Name: strings.TrimSpace(d.name.Text()), Config: d.draftConfig()}
+	if d.profileNameLocked(d.session.View(false)) && p.Name != d.cfg.Profiles[d.selected].Name {
+		d.feedback(renameLockedMessage, true)
+		return
+	}
 	if d.editINI && p.Config != "" && p.Config == strings.TrimSpace(d.convertedINI) {
 		p.Config = d.convertedLink
 	}

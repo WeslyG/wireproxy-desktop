@@ -4,11 +4,16 @@ import GLib from 'gi://GLib';
 export function exerciseTile(extension) {
     const dir = GLib.getenv('WIREPROXY_QA_DIR');
     let last = '';
+    let wasVisible;
     let command = 0;
     GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
         const tile = extension._toggle;
         if (!tile)
             return GLib.SOURCE_REMOVE;
+        if (tile.visible !== wasVisible) {
+            wasVisible = tile.visible;
+            log('WIREPROXY_TILE_VISIBLE ' + wasVisible);
+        }
         const state = `${tile.title} | ${tile.subtitle}`;
         if (state !== last && tile.get_parent()) {
             log('WIREPROXY_TILE ' + state);

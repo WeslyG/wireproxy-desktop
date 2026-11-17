@@ -3,7 +3,6 @@ package desktop
 import (
 	"context"
 	"os"
-	"path/filepath"
 	"sync/atomic"
 	"time"
 
@@ -36,8 +35,7 @@ func startQuickSettings(tray *desktopTray) quickSettings {
 	service.state.Store(quickSettingsStatus{state: "loading"})
 	if err := bus.Export(service, quickSettingsPath, quickSettingsInterface); err == nil {
 		if reply, err := bus.RequestName(quickSettingsBus, dbus.NameFlagDoNotQueue); err == nil && reply == dbus.RequestNameReplyPrimaryOwner {
-			_, err := os.Stat(filepath.Join(linuxDataDir(), "dbus-1", "services", quickSettingsBus+".service"))
-			tray.background = err == nil
+			tray.background = activationServiceExists()
 			return service
 		}
 	}

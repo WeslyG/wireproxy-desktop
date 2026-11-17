@@ -1,0 +1,3 @@
+[D-BUS Service]
+Name=io.github.WeslyG.WireproxyDesktop
+Exec=/usr/bin/wireproxy-desktop --background

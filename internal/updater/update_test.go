@@ -66,13 +66,18 @@ func TestUpdateDiscoveryDownloadInstallAndRestart(t *testing.T) {
 			if err := os.WriteFile(target, old, 0700); err != nil {
 				t.Fatal(err)
 			}
+			assetName := filepath.Base(target)
+			if !tc.wantRollback {
+				ext := filepath.Ext(assetName)
+				assetName = strings.TrimSuffix(assetName, ext) + "-v1.11.0" + ext
+			}
 			digest := fmt.Sprintf("sha256:%x", sha256.Sum256(tc.payload))
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/latest":
 					_ = json.NewEncoder(w).Encode(Release{Tag: "v1.11.0", Notes: "## Changes\n- Updated settings", Assets: []releaseAsset{
 						{Name: "other-platform", URL: "https://" + r.Host + "/wrong"},
-						{Name: filepath.Base(target), URL: "https://" + r.Host + "/binary", Size: int64(len(tc.payload)), Digest: digest},
+						{Name: assetName, URL: "https://" + r.Host + "/binary", Size: int64(len(tc.payload)), Digest: digest},
 					}})
 				case "/binary":
 					_, _ = w.Write(tc.payload)
@@ -90,7 +95,7 @@ func TestUpdateDiscoveryDownloadInstallAndRestart(t *testing.T) {
 				}
 			}
 			release, err := FetchRelease(ctx, server.Client(), server.URL+"/latest", "v1.9.0", filepath.Base(target))
-			if err != nil || release == nil || release.Tag != "v1.11.0" {
+			if err != nil || release == nil || release.Tag != "v1.11.0" || release.Asset.Name != assetName {
 				t.Fatalf("did not discover the new release: %v, %v", release, err)
 			}
 			wrong := release.Asset

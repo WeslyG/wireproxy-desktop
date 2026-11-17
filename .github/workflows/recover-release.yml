@@ -40,6 +40,7 @@ jobs:
           go test ./...
           mkdir -p dist
           output=dist/wireproxy-desktop-macos-arm64
+          if [[ -f scripts/build-rpm.sh ]]; then output+="-$RELEASE_TAG"; fi
           CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -trimpath -ldflags="-s -w -X main.version=$RELEASE_TAG" -o "$output" .
           lipo "$output" -verify_arch arm64
           codesign --force --sign - "$output"
@@ -56,7 +57,7 @@ jobs:
           fi
       - uses: actions/upload-artifact@v4
         with:
-          name: recovered-macos-arm64
+          name: recovered-macos-arm64-${{ inputs.release_tag }}
           path: dist/wireproxy-desktop-macos-arm64*
           if-no-files-found: error
 
@@ -110,13 +111,25 @@ jobs:
           else
             files+=(wireproxy-desktop-macos-amd64 wireproxy-desktop-macos-arm64)
           fi
-          (cd dist && sha256sum "${files[@]}" > SHA256SUMS)
+          checksums=SHA256SUMS
+          if [[ -f scripts/build-rpm.sh ]]; then
+            for i in "${!files[@]}"; do
+              case "${files[i]}" in
+                *.exe|*.zip) file=${files[i]}; files[i]="${file%.*}-$RELEASE_TAG.${file##*.}" ;;
+                *) files[i]+="-$RELEASE_TAG" ;;
+              esac
+            done
+            files+=(wireproxy-desktop-linux-amd64-"$RELEASE_TAG".tar.gz wireproxy-desktop-linux-arm64-"$RELEASE_TAG".tar.gz)
+            files+=(wireproxy-desktop-"${RELEASE_TAG#v}"-1.x86_64.rpm wireproxy-desktop-"${RELEASE_TAG#v}"-1.aarch64.rpm)
+            checksums="SHA256SUMS-$RELEASE_TAG"
+          fi
+          (cd dist && sha256sum "${files[@]}" > "$checksums")
           awk -v tag="$RELEASE_TAG" '
             /^## / { if (found) exit; found = ($0 == "## " tag); next }
             found { print }
           ' CHANGELOG.md > release-notes.md
           test -s release-notes.md
-          assets=(dist/SHA256SUMS)
+          assets=("dist/$checksums")
           for file in "${files[@]}"; do assets+=("dist/$file"); done
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --verify-tag --generate-notes --notes-file release-notes.md --title "$RELEASE_TAG"

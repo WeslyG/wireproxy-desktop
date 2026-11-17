@@ -50,6 +50,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libegl1-mesa-dev libgles2-mesa-dev libxcursor-dev libxfixes-dev
       - name: Test and build
+        id: package
         shell: bash
         run: |
           mkdir -p dist
@@ -84,9 +85,25 @@ jobs:
               rm -- "$output"
               ;;
           esac
+          if [[ "$RUNNER_OS" == Linux && -f scripts/build-rpm.sh ]]; then
+            docker run --rm -v "$PWD:/src:ro" -v "$PWD/dist:/out" fedora:44 bash -euc '
+              dnf -qy install rpm-build desktop-file-utils
+              sh /src/scripts/build-rpm.sh /out "$1" "$2" "$3"
+            ' -- "$version" "${{ matrix.target }}" "${GITHUB_SHA:0:12}"
+          fi
+          suffix=$version
+          if [[ "$suffix" == dev ]]; then suffix="dev-${GITHUB_SHA:0:12}"; fi
+          for file in dist/wireproxy-desktop-"${{ matrix.target }}"*; do
+            case "$file" in
+              *.exe|*.zip) mv -- "$file" "${file%.*}-$suffix.${file##*.}" ;;
+              *.tar.gz) mv -- "$file" "${file%.tar.gz}-$suffix.tar.gz" ;;
+              *) mv -- "$file" "$file-$suffix" ;;
+            esac
+          done
+          printf 'suffix=%s\n' "$suffix" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@v4
         with:
-          name: wireproxy-desktop-${{ matrix.target }}
+          name: wireproxy-desktop-${{ matrix.target }}-${{ steps.package.outputs.suffix }}
           path: dist/*
           if-no-files-found: error
 
@@ -118,7 +135,7 @@ jobs:
           fi
           (
             cd dist
-            sha256sum wireproxy-desktop-* > SHA256SUMS
+            sha256sum wireproxy-desktop-* > "SHA256SUMS-$RELEASE_TAG"
           )
           awk -v tag="$RELEASE_TAG" '
             /^## / { if (found) exit; found = ($0 == "## " tag); next }

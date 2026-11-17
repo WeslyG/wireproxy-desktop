@@ -23,8 +23,10 @@ var systemLanguage = sync.OnceValue(func() string {
 })
 
 var russian = map[string]string{
-	"Enter a valid WireGuard or AmneziaWG configuration.":  "Введите корректную конфигурацию WireGuard или AmneziaWG.",
-	"Download the Linux archive and run install.sh again.": "Скачайте архив Linux и снова запустите install.sh.",
+	"Disconnect this server before renaming it.":                     "Отключите этот сервер, чтобы переименовать его.",
+	"Download the new RPM and install it with your package manager.": "Скачайте новый RPM и установите его через менеджер пакетов.",
+	"Enter a valid WireGuard or AmneziaWG configuration.":            "Введите корректную конфигурацию WireGuard или AmneziaWG.",
+	"Download the Linux archive and run install.sh again.":           "Скачайте архив Linux и снова запустите install.sh.",
 	"Start tunnel":                    "Запустить туннель",
 	"Stop tunnel":                     "Остановить туннель",
 	"Check for updates automatically": "Проверять обновления автоматически",

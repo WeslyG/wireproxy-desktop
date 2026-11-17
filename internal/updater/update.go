@@ -112,15 +112,15 @@ func FetchRelease(ctx context.Context, client *http.Client, endpoint, current, a
 	if !IsNewer(release.Tag, current) {
 		return &release, nil
 	}
-	for _, asset := range release.Assets {
-		if asset.Name == assetName {
-			release.Asset = asset
-			return &release, nil
-		}
+	ext := filepath.Ext(assetName)
+	stem := strings.TrimSuffix(assetName, ext)
+	candidates := []string{stem + "-" + release.Tag + ext, assetName}
+	if ext == ".zip" {
+		candidates = append(candidates, stem+"-"+release.Tag, stem)
 	}
-	if strings.HasSuffix(assetName, ".zip") {
+	for _, name := range candidates {
 		for _, asset := range release.Assets {
-			if asset.Name == strings.TrimSuffix(assetName, ".zip") {
+			if asset.Name == name {
 				release.Asset = asset
 				return &release, nil
 			}

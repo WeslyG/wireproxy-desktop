@@ -140,6 +140,12 @@ wait_for tile Disconnected
 no_window
 if curl --fail --silent --max-time 2 --noproxy '' --proxy socks5h://127.0.0.1:18880 http://10.77.0.1:8080/; then exit 1; fi
 
+service="$XDG_DATA_HOME/dbus-1/services/$app_id.service"
+last_visibility() { grep "WIREPROXY_TILE_VISIBLE" "$qa/gnome.log" | tail -1 | grep -q " $1$"; }
+mv "$service" "$service.bak"
+wait_for last_visibility false
+mv "$service.bak" "$service"
+wait_for last_visibility true
 sh install.sh --uninstall
 test ! -e "$binary"
 test ! -e "$ext/extension.js"

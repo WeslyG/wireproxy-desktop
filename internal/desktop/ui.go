@@ -702,6 +702,11 @@ func (d *desktop) serverRow(gtx layout.Context, index int) layout.Dimensions {
 }
 
 func (d *desktop) profileForm() layout.Widget {
+	d.name.ReadOnly = d.profileNameLocked(d.session.View(false))
+	nameHint := "e.g. Home server"
+	if d.name.ReadOnly {
+		nameHint = renameLockedMessage
+	}
 	title := "Edit server"
 	if d.selected < 0 {
 		title = "Add server"
@@ -729,7 +734,13 @@ func (d *desktop) profileForm() layout.Widget {
 			layout.Rigid(d.button(&d.cancel, "← Back", inputFill, textColor, true)),
 		)), gap(14),
 		layout.Rigid(d.label(13, "Server name", muted, font.Medium)), gap(5),
-		layout.Rigid(d.field(&d.name, "e.g. Home server", 20)), gap(12),
+		layout.Rigid(d.field(&d.name, nameHint, 20)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if !d.name.ReadOnly {
+				return layout.Dimensions{}
+			}
+			return layout.Inset{Top: 5}.Layout(gtx, d.label(12, renameLockedMessage, muted, font.Normal))
+		}), gap(12),
 		layout.Rigid(stack(layout.Horizontal,
 			layout.Rigid(d.button(&d.linkTab, "vpn://", linkFill, textColor, true)), gap(6),
 			layout.Rigid(d.button(&d.iniTab, "INI", iniFill, textColor, true)), gap(6),

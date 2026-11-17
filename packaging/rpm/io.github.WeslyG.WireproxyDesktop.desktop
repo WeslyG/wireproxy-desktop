@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Wireproxy Desktop
+Exec=/usr/bin/wireproxy-desktop
+Icon=io.github.WeslyG.WireproxyDesktop
+Terminal=false
+Categories=Network;
+StartupWMClass=io.github.WeslyG.WireproxyDesktop

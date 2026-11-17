@@ -28,20 +28,20 @@ type updateResult struct {
 }
 
 type updateControls struct {
-	version                        string
-	window                         *app.Window
-	notify                         func()
-	results                        chan updateResult
-	check, install, openRelease    widget.Clickable
-	footerInstall, whatsNew        widget.Clickable
-	autoCheck                      widget.Bool
-	release                        *updater.Release
-	status                         string
-	busy, portable                 bool
-	checking, manualCheck, started bool
-	manualInstall, linuxBundle     bool
-	helper                         io.WriteCloser
-	cancelDownload                 context.CancelFunc
+	version                              string
+	window                               *app.Window
+	notify                               func()
+	results                              chan updateResult
+	check, install, openRelease          widget.Clickable
+	footerInstall, whatsNew              widget.Clickable
+	autoCheck                            widget.Bool
+	release                              *updater.Release
+	status                               string
+	busy, portable                       bool
+	checking, manualCheck, started       bool
+	manualInstall, linuxBundle, linuxRPM bool
+	helper                               io.WriteCloser
+	cancelDownload                       context.CancelFunc
 }
 
 func (u *updateControls) init(notify func(), portable bool, version string) {
@@ -49,7 +49,8 @@ func (u *updateControls) init(notify func(), portable bool, version string) {
 	u.notify, u.portable = notify, portable
 	u.results = make(chan updateResult, 1)
 	u.linuxBundle = installedLinuxBundle()
-	u.manualInstall = runtime.GOOS == "darwin" || u.linuxBundle
+	u.linuxRPM = installedLinuxRPM()
+	u.manualInstall = runtime.GOOS == "darwin" || u.linuxBundle || u.linuxRPM
 	if _, ok := updater.StableVersion(u.version); !ok {
 		u.status = "Automatic installation is available in release builds."
 	}
@@ -234,7 +235,9 @@ func (u *updateControls) layout(d *desktop) layout.Widget {
 	}
 	if u.available() && status == "" {
 		message := "Installing restarts Wireproxy and disconnects the proxy."
-		if u.linuxBundle {
+		if u.linuxRPM {
+			message = "Download the new RPM and install it with your package manager."
+		} else if u.linuxBundle {
 			message = "Download the Linux archive and run install.sh again."
 		} else if u.manualInstall {
 			message = "Download the new app from GitHub and replace your current copy."

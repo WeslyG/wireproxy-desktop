@@ -39,6 +39,21 @@ export default class WireproxyExtension extends Extension {
         this._toggle.connect('clicked', () => this._click());
         this._indicator.quickSettingsItems.push(this._toggle);
         Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
+        const servicePaths = [GLib.get_user_data_dir(), ...GLib.get_system_data_dirs()]
+            .map(dir => Gio.File.new_for_path(GLib.build_filenamev([dir, 'dbus-1', 'services', APP_ID + '.service'])));
+        const updateVisibility = () => {
+            this._toggle.visible = servicePaths.some(file => file.query_exists(null));
+        };
+        this._serviceMonitors = servicePaths.flatMap(file => {
+            try {
+                const monitor = file.monitor_file(Gio.FileMonitorFlags.WATCH_MOVES, null);
+                monitor.connect('changed', updateVisibility);
+                return [monitor];
+            } catch {
+                return [];
+            }
+        });
+        updateVisibility();
         this._render('offline');
         this._refreshPending = false;
         this._statusSignal = Gio.DBus.session.signal_subscribe(APP_ID, INTERFACE,
@@ -50,6 +65,8 @@ export default class WireproxyExtension extends Extension {
     }
 
     disable() {
+        for (const monitor of this._serviceMonitors)
+            monitor.cancel();
         Gio.DBus.session.signal_unsubscribe(this._ownerSignal);
         Gio.DBus.session.signal_unsubscribe(this._statusSignal);
         this._cancel.cancel();

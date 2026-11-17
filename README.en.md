@@ -15,13 +15,15 @@
 
 ## Download
 
-[Latest release](https://github.com/WeslyG/wireproxy-desktop/releases/latest) · [All releases](https://github.com/WeslyG/wireproxy-desktop/releases) · [SHA256SUMS](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/SHA256SUMS)
+[Latest release](https://github.com/WeslyG/wireproxy-desktop/releases/latest) · [All releases](https://github.com/WeslyG/wireproxy-desktop/releases)
 
 | Platform | x64 | ARM64 |
 | --- | --- | --- |
-| Windows | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-amd64.exe) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-windows-arm64.exe) |
-| macOS | [Download x64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-amd64.zip) | [Download ARM64](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-macos-arm64.zip) |
-| Linux | [x64 archive](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64.tar.gz) · [Binary](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-amd64) | [ARM64 archive](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64.tar.gz) · [Binary](https://github.com/WeslyG/wireproxy-desktop/releases/latest/download/wireproxy-desktop-linux-arm64) |
+| Windows | `windows-amd64-vX.Y.Z.exe` | `windows-arm64-vX.Y.Z.exe` |
+| macOS | `macos-amd64-vX.Y.Z.zip` | `macos-arm64-vX.Y.Z.zip` |
+| Linux | `linux-amd64-vX.Y.Z.tar.gz` or `.x86_64.rpm` | `linux-arm64-vX.Y.Z.tar.gz` or `.aarch64.rpm` |
+
+Download the matching file from the release assets. The filenames start with `wireproxy-desktop-` and include the release version. Older releases use unversioned names. If an older installation cannot find the first update with the new names, download it manually.
 
 ## System requirements
 
@@ -37,6 +39,8 @@ The table lists the [build targets](.github/workflows/build.yml). Other Linux di
 
 ### Install in the Linux applications menu
 
+On Fedora, install the matching RPM with `sudo dnf install ./wireproxy-desktop-*.rpm`. On GNOME 51, enable **Wireproxy Desktop Quick Settings** in the Extensions app once. If the extension does not show up there yet, sign out and back in. To remove the app, its D-Bus registration and the extension together, run `sudo dnf remove wireproxy-desktop`. Saved profiles stay in the keyring. If you previously installed the archive version, remove it with its `sh install.sh --uninstall` before installing the RPM.
+
 Extract the `.tar.gz` archive and run `sh install.sh` from the extracted directory. The script installs the app in `~/.local/bin` and adds Wireproxy Desktop with its icon to the applications menu. It runs without `sudo`.
 
 On GNOME Shell 51, run `sh install.sh --gnome` to also install the Wireproxy Quick Settings tile. If GNOME has not discovered the extension, sign out and back in, then run the `gnome-extensions enable` command printed by the installer. Set a **Default server** in the app. The tile starts and stops that profile in the background and shows **Connected** after the handshake is confirmed. Closing the window leaves the active tunnel running.
@@ -44,7 +48,7 @@ On GNOME Shell 51, run `sh install.sh --gnome` to also install the Wireproxy Qui
 ### First launch on macOS
 
 1. Open ** → About This Mac**. Confirm that you have macOS 15 Sequoia or later. Download the **ARM64** ZIP for Apple Silicon or the **x64** ZIP for Intel.
-2. Download the ZIP from [GitHub Releases](https://github.com/WeslyG/wireproxy-desktop/releases/latest) and compare its SHA-256 digest with the matching line in `SHA256SUMS`. Extract the ZIP, move **Wireproxy Desktop.app** to **Applications**, and double-click it.
+2. Download the ZIP from [GitHub Releases](https://github.com/WeslyG/wireproxy-desktop/releases/latest) and compare its SHA-256 digest with the matching line in `SHA256SUMS-vX.Y.Z`. Extract the ZIP, move **Wireproxy Desktop.app** to **Applications**, and double-click it.
 3. The app has an ad hoc signature. It has no Developer ID signature or Apple notarization. If macOS says it cannot verify the app or its developer, dismiss the warning and open **System Settings → Privacy & Security**. Scroll to **Security** and click **Open Anyway** next to the message about Wireproxy Desktop. The button is available for about an hour after a launch attempt. If it is missing, try opening the app in Finder again.
 4. Confirm that you want to open the app and enter your Mac login password if prompted. macOS remembers the exception for this app. [Apple’s instructions](https://support.apple.com/en-us/102445)
 5. Read the app’s Keychain explanation and click **Continue**. Wireproxy Desktop uses its own entry to store profiles and proxy settings.
