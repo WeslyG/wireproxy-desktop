@@ -67,10 +67,6 @@ cat > "$bundle/Contents/Info.plist" <<EOF
 EOF
 
 plutil -lint "$bundle/Contents/Info.plist"
-if [ "${NOTARIZE_MACOS:-false}" = true ]; then
-    sh scripts/notarize-macos-app.sh "$bundle"
-else
-    codesign --force --sign - "$bundle"
-fi
+codesign --force --sign - "$bundle"
 codesign --verify --strict "$bundle"
 mv "$bundle" "$output"

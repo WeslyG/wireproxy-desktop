@@ -96,12 +96,6 @@ jobs:
         env:
           VERSION: ${{ steps.build.outputs.version }}
           TARGET: ${{ matrix.target }}
-          NOTARIZE_MACOS: ${{ env.RELEASE_TAG != '' && (vars.NOTARIZE_MACOS_RELEASES == 'true' || vars.PUBLISH_HOMEBREW == 'true') }}
-          MACOS_CERTIFICATE_BASE64: ${{ env.RELEASE_TAG != '' && secrets.MACOS_CERTIFICATE_BASE64 || '' }}
-          MACOS_CERTIFICATE_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
-          APPLE_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_ID || '' }}
-          APPLE_TEAM_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_TEAM_ID || '' }}
-          APPLE_APP_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.APPLE_APP_PASSWORD || '' }}
         run: |
           output="dist/wireproxy-desktop-$TARGET"
           bundle="$RUNNER_TEMP/Wireproxy Desktop.app"

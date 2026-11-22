@@ -21,8 +21,9 @@ winget uninstall --id WeslyG.WireproxyDesktop --exact --source winget
 ## Homebrew
 
 1. Создайте публичный репозиторий `WeslyG/homebrew-tap` и инициализируйте ветку `main`. Добавьте fine-grained PAT с правом **Contents: Read and write** для этого репозитория в секрет `HOMEBREW_TAP_TOKEN`. Workflow обновляет файл `Casks/wireproxy-desktop.rb` в `main`. [Устройство Homebrew tap](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap)
-2. Получите сертификат Apple **Developer ID Application** и экспортируйте его вместе с приватным ключом в `.p12`. В секреты основного репозитория добавьте `MACOS_CERTIFICATE_BASE64` (файл `.p12` в Base64), `MACOS_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_TEAM_ID` и `APPLE_APP_PASSWORD` (пароль приложения для `notarytool`). [Developer ID](https://developer.apple.com/help/account/certificates/create-developer-id-certificates) · [Нотариализация](https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution)
-3. Установите `PUBLISH_HOMEBREW=true` **до сборки** нового тега. Сборка подпишет и нотариализует обе архитектуры. Перед обновлением tap workflow проверит подписи, приложение в каждом архиве и установку и удаление cask на Apple Silicon. Для пробного подписанного релиза без обновления tap используйте `NOTARIZE_MACOS_RELEASES=true`.
+2. Установите `PUBLISH_HOMEBREW=true`. Перед обновлением tap workflow проверит SHA-256, архитектуру, версию и подпись ad hoc каждого архива, а также установку и удаление cask на Apple Silicon.
+
+Homebrew сохраняет карантин для cask. При первом запуске macOS может запросить подтверждение для сборки с подписью ad hoc. Инструкция по первому запуску есть в [README](../README.md#первый-запуск-на-macos). [Как Homebrew проверяет cask](https://docs.brew.sh/Supply-Chain-Security) · [Открытие приложения в macOS](https://support.apple.com/ru-ru/102445)
 
 ```sh
 brew install --cask WeslyG/tap/wireproxy-desktop

@@ -140,7 +140,7 @@ jobs:
         with:
           name: package-manifests-${{ inputs.release_tag }}
           path: packages
-      - name: Verify signatures and notarization in both macOS archives
+      - name: Verify app bundles in both macOS archives
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -158,8 +158,6 @@ jobs:
             test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "${RELEASE_TAG#v}"
             lipo -verify_arch "$architecture" "$app/Contents/MacOS/wireproxy-desktop"
             codesign --verify --deep --strict "$app"
-            xcrun stapler validate "$app"
-            spctl --assess --type execute --verbose "$app"
           done
       - name: Test installing and uninstalling the cask
         run: |
