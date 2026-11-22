@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.0
+
+- Add x64 and ARM64 Windows installers with a Start menu shortcut and standard uninstall support. Installer builds can be updated through WinGet once the package is published.
+- Add Fedora RPMs and Linux installation archives with an application launcher. The GNOME Quick Settings tile shows the default profile and can toggle it while the window is closed.
+- Use GNOME-style window controls and prevent renaming a profile while it is connected.
+- Restore the macOS window to its previous position before showing it and check Keychain data before skipping the startup notice.
+- Prepare Homebrew installation for Intel and Apple Silicon. Release filenames include the version, and the updater recognizes version tags with or without a `v` prefix.
+
 ## v1.0.2
 
 - Connect and disconnect from the macOS menu bar. On macOS and Windows, connecting from the tray uses the default server and requires one to be configured.

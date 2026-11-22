@@ -8,7 +8,8 @@
 
 1. Укажите лицензию Wireproxy Desktop в переменной `WINGET_PACKAGE_LICENSE`. Файл `LICENSE.wireproxy-awg` относится к зависимости wireproxy-awg.
 2. Создайте классический GitHub PAT со scope `public_repo` и сохраните его в секрете `WINGET_CREATE_GITHUB_TOKEN`. [Настройка токена WingetCreate](https://github.com/microsoft/winget-create/blob/main/doc/token.md)
-3. Установите переменную `PUBLISH_WINGET=true`. Workflow отправит PR с манифестами `WeslyG.WireproxyDesktop` в `microsoft/winget-pkgs`. Для появления версии в источнике `winget` PR должен пройти проверки и быть принят. [Проверки каталога WinGet](https://github.com/microsoft/winget-pkgs/blob/master/doc/Authoring.md)
+3. Установите переменную `PUBLISH_WINGET=true`. После публикации релиза workflow отправит PR с манифестами `WeslyG.WireproxyDesktop` в `microsoft/winget-pkgs`. Ссылка на PR появится в журнале шага **Submit WinGet manifest** и в сводке запуска Actions.
+4. Дождитесь меток `Validation-Completed` и `Moderator-Approved`, затем слияния PR и публикации в источнике `winget`. Если при первой подаче Microsoft CLA bot попросит принять соглашение, это делает автор PR со своего аккаунта. [Проверки и модерация](https://github.com/microsoft/winget-pkgs/blob/master/doc/Validation.md) · [Первая подача и CLA](https://github.com/microsoft/winget-pkgs/blob/master/doc/FirstContribution.md)
 
 Установщик работает в профиле текущего пользователя, создаёт ярлык в меню «Пуск» и регистрирует удаление приложения. Обновлять установленные версии можно через WinGet или запуском более нового установщика. Профили остаются в хранилище текущего пользователя.
 

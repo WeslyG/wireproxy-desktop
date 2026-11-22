@@ -238,6 +238,10 @@ jobs:
             /^## / { if (found) exit; found = ($0 == "## " tag); next }
             found { print }
           ' CHANGELOG.md > release-notes.md
+          if ! grep -q '[^[:space:]]' release-notes.md; then
+            echo "Missing release notes for $RELEASE_TAG in CHANGELOG.md" >&2
+            exit 1
+          fi
           gh release create "$RELEASE_TAG" dist/* \
             --verify-tag --generate-notes --notes-file release-notes.md --title "$RELEASE_TAG"
 

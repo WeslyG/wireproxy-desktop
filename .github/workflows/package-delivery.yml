@@ -117,9 +117,10 @@ jobs:
           $title = "New version: WeslyG.WireproxyDesktop version $version"
           $open = gh search prs $title --repo microsoft/winget-pkgs --state open --match title --json title,url
           if ($LASTEXITCODE -ne 0) { throw 'Could not check for an existing WinGet pull request' }
-          $existing = $open | ConvertFrom-Json | Where-Object Title -eq $title
+          $existing = $open | ConvertFrom-Json | Where-Object Title -eq $title | Select-Object -First 1
           if ($existing) {
               Write-Output "WinGet submission already open: $($existing.url)"
+              "[Track WinGet pull request]($($existing.url))" >> $env:GITHUB_STEP_SUMMARY
               exit 0
           }
           $published = gh api "repos/microsoft/winget-pkgs/contents/$manifest/WeslyG.WireproxyDesktop.yaml" --include 2>$null
@@ -128,8 +129,14 @@ jobs:
               exit 0
           }
           if (!($published -match '^HTTP/\S+ 404\b')) { throw 'Could not check WinGet package version' }
-          & (Join-Path $env:RUNNER_TEMP 'wingetcreate.exe') submit --prtitle $title --no-open "packages/$manifest"
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $submission = & (Join-Path $env:RUNNER_TEMP 'wingetcreate.exe') submit --prtitle $title --no-open "packages/$manifest"
+          $submitExitCode = $LASTEXITCODE
+          $submission | Write-Output
+          if ($submitExitCode -ne 0) { exit $submitExitCode }
+          $pr = [regex]::Match(($submission -join "`n"), 'https://github\.com/microsoft/winget-pkgs/pull/\d+').Value
+          if ($pr) {
+              "[Track WinGet pull request]($pr)" >> $env:GITHUB_STEP_SUMMARY
+          }
 
   homebrew-verify:
     needs: prepare
