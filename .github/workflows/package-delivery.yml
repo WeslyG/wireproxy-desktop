@@ -163,7 +163,7 @@ jobs:
             ditto -x -k "$archive" "$target"
             app="$target/Wireproxy Desktop.app"
             test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "${RELEASE_TAG#v}"
-            lipo -verify_arch "$architecture" "$app/Contents/MacOS/wireproxy-desktop"
+            lipo "$app/Contents/MacOS/wireproxy-desktop" -verify_arch "$architecture"
             codesign --verify --deep --strict "$app"
           done
       - name: Test installing and uninstalling the cask
