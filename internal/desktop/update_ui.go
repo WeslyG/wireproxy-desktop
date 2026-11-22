@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -40,6 +41,7 @@ type updateControls struct {
 	busy, portable                       bool
 	checking, manualCheck, started       bool
 	manualInstall, linuxBundle, linuxRPM bool
+	winGetManaged                        bool
 	helper                               io.WriteCloser
 	cancelDownload                       context.CancelFunc
 }
@@ -50,6 +52,12 @@ func (u *updateControls) init(notify func(), portable bool, version string) {
 	u.results = make(chan updateResult, 1)
 	u.linuxBundle = installedLinuxBundle()
 	u.linuxRPM = installedLinuxRPM()
+	if runtime.GOOS == "windows" {
+		if exe, err := os.Executable(); err == nil {
+			info, err := os.Stat(filepath.Join(filepath.Dir(exe), "winget-managed"))
+			u.winGetManaged = err == nil && info.Mode().IsRegular()
+		}
+	}
 	u.manualInstall = runtime.GOOS == "darwin" || u.linuxBundle || u.linuxRPM
 	if _, ok := updater.StableVersion(u.version); !ok {
 		u.status = "Automatic installation is available in release builds."
@@ -92,6 +100,9 @@ func (u *updateControls) download() {
 }
 
 func (u *updateControls) update(gtx layout.Context, d *desktop) {
+	if u.winGetManaged {
+		return
+	}
 	if !u.started && !d.keychainNotice && d.storeStatus == "" {
 		u.started = true
 		u.autoCheck.Value = !d.cfg.Settings.DisableUpdateCheck
@@ -228,6 +239,13 @@ func (u *updateControls) shutdown() {
 }
 
 func (u *updateControls) layout(d *desktop) layout.Widget {
+	if u.winGetManaged {
+		return stack(layout.Vertical,
+			layout.Rigid(d.rawLabel(13, d.tr("App updates")+"  ·  "+u.version, textColor, font.Bold)),
+			gap(5),
+			layout.Rigid(d.label(13, "Update with WinGet or the installer.", muted, font.Normal)),
+		)
+	}
 	_, released := updater.StableVersion(u.version)
 	status := d.tr(u.status)
 	if !released && !u.busy && u.release != nil && u.status == "Latest published release" {

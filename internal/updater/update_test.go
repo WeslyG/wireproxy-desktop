@@ -54,11 +54,13 @@ func TestUpdateDiscoveryDownloadInstallAndRestart(t *testing.T) {
 
 	for _, tc := range []struct {
 		name         string
+		tag          string
+		current      string
 		payload      []byte
 		wantRollback bool
 	}{
-		{"valid release", payload, false},
-		{"invalid executable rolls back", []byte("not an executable"), true},
+		{"release without prefix", "1.11.0", "v1.9.0", payload, false},
+		{"legacy release with invalid executable rolls back", "v1.11.0", "1.9.0", []byte("not an executable"), true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
@@ -69,13 +71,13 @@ func TestUpdateDiscoveryDownloadInstallAndRestart(t *testing.T) {
 			assetName := filepath.Base(target)
 			if !tc.wantRollback {
 				ext := filepath.Ext(assetName)
-				assetName = strings.TrimSuffix(assetName, ext) + "-v1.11.0" + ext
+				assetName = strings.TrimSuffix(assetName, ext) + "-" + tc.tag + ext
 			}
 			digest := fmt.Sprintf("sha256:%x", sha256.Sum256(tc.payload))
 			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				switch r.URL.Path {
 				case "/latest":
-					_ = json.NewEncoder(w).Encode(Release{Tag: "v1.11.0", Notes: "## Changes\n- Updated settings", Assets: []releaseAsset{
+					_ = json.NewEncoder(w).Encode(Release{Tag: tc.tag, Notes: "## Changes\n- Updated settings", Assets: []releaseAsset{
 						{Name: "other-platform", URL: "https://" + r.Host + "/wrong"},
 						{Name: assetName, URL: "https://" + r.Host + "/binary", Size: int64(len(tc.payload)), Digest: digest},
 					}})
@@ -88,14 +90,14 @@ func TestUpdateDiscoveryDownloadInstallAndRestart(t *testing.T) {
 			defer server.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 			defer cancel()
-			for _, current := range []string{"v1.11.0", "v1.12.0", "dev"} {
+			for _, current := range []string{"1.11.0", "v1.11.0", "1.12.0", "dev"} {
 				release, err := FetchRelease(ctx, server.Client(), server.URL+"/latest", current, filepath.Base(target))
 				if err != nil || release == nil || release.Asset.Name != "" || release.Notes == "" {
 					t.Fatalf("offered an update for %s: %v, %v", current, release, err)
 				}
 			}
-			release, err := FetchRelease(ctx, server.Client(), server.URL+"/latest", "v1.9.0", filepath.Base(target))
-			if err != nil || release == nil || release.Tag != "v1.11.0" || release.Asset.Name != assetName {
+			release, err := FetchRelease(ctx, server.Client(), server.URL+"/latest", tc.current, filepath.Base(target))
+			if err != nil || release == nil || release.Tag != tc.tag || release.Asset.Name != assetName {
 				t.Fatalf("did not discover the new release: %v, %v", release, err)
 			}
 			wrong := release.Asset

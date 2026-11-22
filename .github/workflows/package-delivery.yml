@@ -1,0 +1,208 @@
+name: Deliver packages to WinGet and Homebrew
+
+on:
+  workflow_call:
+    inputs:
+      release_tag:
+        type: string
+        required: true
+      publish:
+        type: boolean
+        default: false
+    secrets:
+      WINGET_CREATE_GITHUB_TOKEN:
+        required: false
+      HOMEBREW_TAP_TOKEN:
+        required: false
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Published stable tag (X.Y.Z)
+        type: string
+        required: true
+      publish:
+        description: Publish to the enabled package channels
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+concurrency:
+  group: package-delivery
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ${{ inputs.release_tag }}
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Generate manifests from published release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ inputs.publish }}
+          WINGET_PACKAGE_LICENSE: ${{ vars.WINGET_PACKAGE_LICENSE || 'Unspecified' }}
+        run: |
+          [[ "$RELEASE_TAG" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" |
+            jq -e '.draft == false and .prerelease == false'
+          if [[ "$PUBLISH" == true ]]; then
+            test "$GITHUB_REPOSITORY" = WeslyG/wireproxy-desktop
+            test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" = "$RELEASE_TAG"
+          fi
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --dir release-assets \
+            --pattern "wireproxy-desktop-setup-windows-*-$RELEASE_TAG.exe" \
+            --pattern "wireproxy-desktop-macos-*-$RELEASE_TAG.zip" \
+            --pattern "SHA256SUMS-$RELEASE_TAG"
+          (
+            cd release-assets
+            for file in *.exe *.zip; do
+              awk -v file="$file" '$2 == file { print; found = 1 } END { exit !found }' "SHA256SUMS-$RELEASE_TAG"
+            done > package-checksums
+            sha256sum --strict --check package-checksums
+          )
+          python3 scripts/generate-package-manifests.py "$RELEASE_TAG" release-assets packages \
+            --license "$WINGET_PACKAGE_LICENSE"
+          ruby -c packages/Casks/wireproxy-desktop.rb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-manifests-${{ inputs.release_tag }}
+          path: packages/
+          if-no-files-found: error
+          overwrite: true
+
+  winget:
+    needs: prepare
+    if: inputs.publish && vars.PUBLISH_WINGET == 'true'
+    runs-on: windows-2025
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-manifests-${{ inputs.release_tag }}
+          path: packages
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.0.x'
+      - name: Download WinGet Create
+        shell: pwsh
+        run: |
+          $tool = Join-Path $env:RUNNER_TEMP 'wingetcreate.exe'
+          Invoke-WebRequest -Uri 'https://github.com/microsoft/winget-create/releases/download/v1.12.13.0/wingetcreate.exe' -OutFile $tool
+          $expected = '24042bd37915805615e6cf969ac57c6439124c3fe85823327f5f3fb24bd9ffea'
+          if ((Get-FileHash -LiteralPath $tool -Algorithm SHA256).Hash -ne $expected) {
+              throw 'WinGet Create checksum mismatch'
+          }
+      - name: Submit WinGet manifest
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+          WINGET_PACKAGE_LICENSE: ${{ vars.WINGET_PACKAGE_LICENSE }}
+        run: |
+          if (!$env:WINGET_CREATE_GITHUB_TOKEN) { throw 'Set WINGET_CREATE_GITHUB_TOKEN to enable WinGet submission' }
+          if ([string]::IsNullOrWhiteSpace($env:WINGET_PACKAGE_LICENSE) -or $env:WINGET_PACKAGE_LICENSE -eq 'Unspecified') {
+              throw 'Set WINGET_PACKAGE_LICENSE to the license that applies to Wireproxy Desktop'
+          }
+          $version = $env:RELEASE_TAG -creplace '^v', ''
+          $manifest = "manifests/w/WeslyG/WireproxyDesktop/$version"
+          $title = "New version: WeslyG.WireproxyDesktop version $version"
+          $open = gh search prs $title --repo microsoft/winget-pkgs --state open --match title --json title,url
+          if ($LASTEXITCODE -ne 0) { throw 'Could not check for an existing WinGet pull request' }
+          $existing = $open | ConvertFrom-Json | Where-Object Title -eq $title
+          if ($existing) {
+              Write-Output "WinGet submission already open: $($existing.url)"
+              exit 0
+          }
+          $published = gh api "repos/microsoft/winget-pkgs/contents/$manifest/WeslyG.WireproxyDesktop.yaml" --include 2>$null
+          if ($LASTEXITCODE -eq 0) {
+              Write-Output 'This version already exists in the WinGet repository'
+              exit 0
+          }
+          if (!($published -match '^HTTP/\S+ 404\b')) { throw 'Could not check WinGet package version' }
+          & (Join-Path $env:RUNNER_TEMP 'wingetcreate.exe') submit --prtitle $title --no-open "packages/$manifest"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+  homebrew-verify:
+    needs: prepare
+    if: inputs.publish && vars.PUBLISH_HOMEBREW == 'true'
+    runs-on: macos-15
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-manifests-${{ inputs.release_tag }}
+          path: packages
+      - name: Verify signatures and notarization in both macOS archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for target in arm64 amd64; do
+            archive="wireproxy-desktop-macos-$target-$RELEASE_TAG.zip"
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$archive"
+            digest=$(shasum -a 256 "$archive" | cut -d ' ' -f 1)
+            case "$target" in
+              arm64) architecture=arm64; label=arm ;;
+              amd64) architecture=x86_64; label=intel ;;
+            esac
+            grep -Eq "^[[:space:]]*(sha256 )?$label:[[:space:]]+\"$digest\"" packages/Casks/wireproxy-desktop.rb
+            ditto -x -k "$archive" "$target"
+            app="$target/Wireproxy Desktop.app"
+            test "$(plutil -extract CFBundleShortVersionString raw "$app/Contents/Info.plist")" = "${RELEASE_TAG#v}"
+            lipo -verify_arch "$architecture" "$app/Contents/MacOS/wireproxy-desktop"
+            codesign --verify --deep --strict "$app"
+            xcrun stapler validate "$app"
+            spctl --assess --type execute --verbose "$app"
+          done
+      - name: Test installing and uninstalling the cask
+        run: |
+          tap="$RUNNER_TEMP/wireproxy-homebrew-qa"
+          apps="$RUNNER_TEMP/wireproxy-apps"
+          mkdir -p "$tap/Casks" "$apps"
+          cp packages/Casks/wireproxy-desktop.rb "$tap/Casks/"
+          git -C "$tap" init -b main
+          git -C "$tap" add Casks
+          git -C "$tap" -c user.name=QA -c user.email=qa@example.invalid commit -m 'Test cask'
+          export HOMEBREW_NO_AUTO_UPDATE=1
+          cask=wireproxy/qa/wireproxy-desktop
+          brew tap wireproxy/qa "$tap"
+          brew install --cask --appdir="$apps" "$cask"
+          test -d "$apps/Wireproxy Desktop.app"
+          brew uninstall --cask "$cask"
+          test ! -e "$apps/Wireproxy Desktop.app"
+
+  homebrew-publish:
+    needs: homebrew-verify
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Confirm the release is still current
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: test "$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq '.tag_name')" = "$RELEASE_TAG"
+      - uses: actions/download-artifact@v4
+        with:
+          name: package-manifests-${{ inputs.release_tag }}
+          path: packages
+      - uses: actions/checkout@v4
+        with:
+          repository: WeslyG/homebrew-tap
+          ref: main
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - name: Update the Homebrew tap
+        run: |
+          mkdir -p tap/Casks
+          cp packages/Casks/wireproxy-desktop.rb tap/Casks/wireproxy-desktop.rb
+          git -C tap add -- Casks/wireproxy-desktop.rb
+          if git -C tap diff --cached --quiet; then exit 0; fi
+          git -C tap -c user.name='github-actions[bot]' \
+            -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "Update wireproxy-desktop to ${RELEASE_TAG#v}"
+          git -C tap push origin HEAD:main

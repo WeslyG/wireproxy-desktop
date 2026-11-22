@@ -30,7 +30,7 @@ const (
 	maxUpdateSize      = 100 << 20
 )
 
-var releaseTag = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
+var releaseTag = regexp.MustCompile(`^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 type releaseAsset struct {
 	Name   string `json:"name"`

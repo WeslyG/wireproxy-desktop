@@ -14,7 +14,7 @@ if [ "$tag" = dev ]; then
     version=0.0.0
     release=0.dev.$revision
 else
-    printf '%s\n' "$tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+    printf '%s\n' "$tag" | grep -Eq '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
     version=${tag#v}
     release=1
 fi

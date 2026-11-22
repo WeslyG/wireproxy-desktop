@@ -19,9 +19,9 @@
 
 | Platform | x64 | ARM64 |
 | --- | --- | --- |
-| Windows | `windows-amd64-vX.Y.Z.exe` | `windows-arm64-vX.Y.Z.exe` |
-| macOS | `macos-amd64-vX.Y.Z.zip` | `macos-arm64-vX.Y.Z.zip` |
-| Linux | `linux-amd64-vX.Y.Z.tar.gz` or `.x86_64.rpm` | `linux-arm64-vX.Y.Z.tar.gz` or `.aarch64.rpm` |
+| Windows | `windows-amd64-X.Y.Z.exe` | `windows-arm64-X.Y.Z.exe` |
+| macOS | `macos-amd64-X.Y.Z.zip` | `macos-arm64-X.Y.Z.zip` |
+| Linux | `linux-amd64-X.Y.Z.tar.gz` or `.x86_64.rpm` | `linux-arm64-X.Y.Z.tar.gz` or `.aarch64.rpm` |
 
 Download the matching file from the release assets. The filenames start with `wireproxy-desktop-` and include the release version. Older releases use unversioned names. If an older installation cannot find the first update with the new names, download it manually.
 
@@ -48,8 +48,8 @@ On GNOME Shell 51, run `sh install.sh --gnome` to also install the Wireproxy Qui
 ### First launch on macOS
 
 1. Open ** → About This Mac**. Confirm that you have macOS 15 Sequoia or later. Download the **ARM64** ZIP for Apple Silicon or the **x64** ZIP for Intel.
-2. Download the ZIP from [GitHub Releases](https://github.com/WeslyG/wireproxy-desktop/releases/latest) and compare its SHA-256 digest with the matching line in `SHA256SUMS-vX.Y.Z`. Extract the ZIP, move **Wireproxy Desktop.app** to **Applications**, and double-click it.
-3. The app has an ad hoc signature. It has no Developer ID signature or Apple notarization. If macOS says it cannot verify the app or its developer, dismiss the warning and open **System Settings → Privacy & Security**. Scroll to **Security** and click **Open Anyway** next to the message about Wireproxy Desktop. The button is available for about an hour after a launch attempt. If it is missing, try opening the app in Finder again.
+2. Download the ZIP from [GitHub Releases](https://github.com/WeslyG/wireproxy-desktop/releases/latest) and compare its SHA-256 digest with the matching line in `SHA256SUMS-X.Y.Z`. Older release filenames prefix the version with `v`. Extract the ZIP, move **Wireproxy Desktop.app** to **Applications**, and double-click it.
+3. For ad hoc-signed builds, macOS may say it cannot verify the app or its developer. Dismiss the warning and open **System Settings → Privacy & Security**. Scroll to **Security** and click **Open Anyway** next to the message about Wireproxy Desktop. The button is available for about an hour after a launch attempt. If it is missing, try opening the app in Finder again.
 4. Confirm that you want to open the app and enter your Mac login password if prompted. macOS remembers the exception for this app. [Apple’s instructions](https://support.apple.com/en-us/102445)
 5. Read the app’s Keychain explanation and click **Continue**. Wireproxy Desktop uses its own entry to store profiles and proxy settings.
 
@@ -79,7 +79,7 @@ On first launch, the app migrates the old configuration to protected storage and
 
 ## Updates
 
-Release builds check GitHub Releases at startup. You can turn automatic checks off in **Settings → Updates**. New versions appear in the status bar at the bottom of the window. **What's new** opens the release notes in the app. On Windows and Linux, **Install and restart** downloads the binary, verifies its SHA-256 digest, and restarts the app. The executable directory must be writable. On macOS, the download button opens the release page so you can replace the app from the ZIP.
+Manually installed builds check GitHub Releases at startup. You can turn automatic checks off in **Settings → Updates**. New versions appear in the status bar at the bottom of the window. **What's new** opens the release notes in the app. For standalone Windows and Linux binaries, **Install and restart** downloads the binary, verifies its SHA-256 digest, and restarts the app. The executable directory must be writable. On macOS, the download button opens the release page so you can replace the app from the ZIP. If you installed through WinGet or Homebrew, use the same package manager to upgrade.
 
 ## Diagnostics
 

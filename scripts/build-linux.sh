@@ -7,7 +7,7 @@ mkdir -p -- "$output_dir"
 output_dir=$(CDPATH= cd -- "$output_dir" && pwd -P)
 cd "$(dirname "$0")/.."
 if [ "$version" != dev ]; then
-    printf '%s\n' "$version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+    printf '%s\n' "$version" | grep -Eq '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 fi
 arch=$(go env GOARCH)
 case "$arch" in amd64|arm64) ;; *) exit 2 ;; esac

@@ -34,8 +34,14 @@ jobs:
         shell: bash
         env:
           MACOSX_DEPLOYMENT_TARGET: '15.0'
+          NOTARIZE_MACOS: ${{ vars.NOTARIZE_MACOS_RELEASES == 'true' || vars.PUBLISH_HOMEBREW == 'true' }}
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: |
-          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          [[ "$RELEASE_TAG" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
           [[ "$BUILD_RUN" =~ ^[0-9]+$ ]]
           go test ./...
           mkdir -p dist
@@ -46,7 +52,7 @@ jobs:
           codesign --force --sign - "$output"
           codesign --verify "$output"
           if [[ -f scripts/build-macos-app.sh ]]; then
-            bundle="$RUNNER_TEMP/Wireproxy Desktop $RELEASE_TAG.app"
+            bundle="$RUNNER_TEMP/Wireproxy Desktop.app"
             if grep -q CFBundleShortVersionString scripts/build-macos-app.sh; then
               sh scripts/build-macos-app.sh "$bundle" "$output" "$RELEASE_TAG"
             else
@@ -64,6 +70,8 @@ jobs:
   release:
     needs: build-arm
     runs-on: ubuntu-24.04
+    outputs:
+      has_windows_installers: ${{ steps.release.outputs.has_windows_installers }}
     permissions:
       actions: read
       contents: write
@@ -94,11 +102,13 @@ jobs:
           merge-multiple: true
       - uses: actions/download-artifact@v4
         with:
-          name: recovered-macos-arm64
+          name: recovered-macos-arm64-${{ inputs.release_tag }}
           path: dist
       - name: Publish the existing tag
+        id: release
         shell: bash
         run: |
+          if [[ -f scripts/build-windows-installer.ps1 ]]; then echo 'has_windows_installers=true' >> "$GITHUB_OUTPUT"; fi
           if [[ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft)" == false ]]; then
             exit 0
           fi
@@ -123,6 +133,9 @@ jobs:
             files+=(wireproxy-desktop-"${RELEASE_TAG#v}"-1.x86_64.rpm wireproxy-desktop-"${RELEASE_TAG#v}"-1.aarch64.rpm)
             checksums="SHA256SUMS-$RELEASE_TAG"
           fi
+          if [[ -f scripts/build-windows-installer.ps1 ]]; then
+            files+=(wireproxy-desktop-setup-windows-amd64-"$RELEASE_TAG".exe wireproxy-desktop-setup-windows-arm64-"$RELEASE_TAG".exe)
+          fi
           (cd dist && sha256sum "${files[@]}" > "$checksums")
           awk -v tag="$RELEASE_TAG" '
             /^## / { if (found) exit; found = ($0 == "## " tag); next }
@@ -133,3 +146,14 @@ jobs:
           for file in "${files[@]}"; do assets+=("dist/$file"); done
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --verify-tag --generate-notes --notes-file release-notes.md --title "$RELEASE_TAG"
+
+  package-delivery:
+    needs: release
+    if: needs.release.outputs.has_windows_installers == 'true' && (vars.PUBLISH_WINGET == 'true' || vars.PUBLISH_HOMEBREW == 'true')
+    uses: ./.github/workflows/package-delivery.yml
+    with:
+      release_tag: ${{ inputs.release_tag }}
+      publish: true
+    secrets:
+      WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}

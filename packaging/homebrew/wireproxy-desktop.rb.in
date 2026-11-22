@@ -1,0 +1,18 @@
+cask "wireproxy-desktop" do
+  arch arm: "arm64", intel: "amd64"
+
+  version "$VERSION"
+  sha256 arm:   "$MACOS_ARM64",
+         intel: "$MACOS_AMD64"
+
+  url "$BASE_URL/wireproxy-desktop-macos-#{arch}-$TAG.zip"
+  name "Wireproxy Desktop"
+  desc "Desktop client for a WireGuard and AmneziaWG SOCKS5 proxy"
+  homepage "$HOMEPAGE/"
+
+  depends_on macos: :sequoia
+
+  app "Wireproxy Desktop.app"
+
+  uninstall quit: "com.weslyg.wireproxy-desktop"
+end

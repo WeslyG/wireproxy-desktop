@@ -41,6 +41,7 @@ else
         go build -trimpath -o "$bundle/Contents/MacOS/wireproxy-desktop" .
 fi
 sips -s format icns assets/icon.png --out "$bundle/Contents/Resources/AppIcon.icns" >/dev/null
+cp LICENSE.wireproxy-awg "$bundle/Contents/Resources/"
 
 cat > "$bundle/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -66,6 +67,10 @@ cat > "$bundle/Contents/Info.plist" <<EOF
 EOF
 
 plutil -lint "$bundle/Contents/Info.plist"
-codesign --force --sign - "$bundle"
+if [ "${NOTARIZE_MACOS:-false}" = true ]; then
+    sh scripts/notarize-macos-app.sh "$bundle"
+else
+    codesign --force --sign - "$bundle"
+fi
 codesign --verify --strict "$bundle"
 mv "$bundle" "$output"

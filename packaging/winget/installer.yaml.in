@@ -1,0 +1,25 @@
+# yaml-language-server: $$schema=https://aka.ms/winget-manifest.installer.1.9.0.schema.json
+
+PackageIdentifier: WeslyG.WireproxyDesktop
+PackageVersion: $VERSION
+MinimumOSVersion: 10.0.22000.0
+InstallerType: inno
+Scope: user
+UpgradeBehavior: install
+InstallModes:
+- interactive
+- silent
+- silentWithProgress
+AppsAndFeaturesEntries:
+- DisplayName: Wireproxy Desktop
+  Publisher: WeslyG
+  ProductCode: WeslyG.WireproxyDesktop_is1
+Installers:
+- Architecture: x64
+  InstallerUrl: $BASE_URL/wireproxy-desktop-setup-windows-amd64-$TAG.exe
+  InstallerSha256: $WINDOWS_AMD64
+- Architecture: arm64
+  InstallerUrl: $BASE_URL/wireproxy-desktop-setup-windows-arm64-$TAG.exe
+  InstallerSha256: $WINDOWS_ARM64
+ManifestType: installer
+ManifestVersion: 1.9.0

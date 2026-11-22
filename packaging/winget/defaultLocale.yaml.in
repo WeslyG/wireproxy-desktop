@@ -1,0 +1,15 @@
+# yaml-language-server: $$schema=https://aka.ms/winget-manifest.defaultLocale.1.9.0.schema.json
+
+PackageIdentifier: WeslyG.WireproxyDesktop
+PackageVersion: $VERSION
+PackageLocale: en-US
+Publisher: WeslyG
+PublisherUrl: $HOMEPAGE
+PublisherSupportUrl: $HOMEPAGE/issues
+PackageName: Wireproxy Desktop
+PackageUrl: $HOMEPAGE
+License: $LICENSE
+ShortDescription: Desktop client for a WireGuard and AmneziaWG SOCKS5 proxy
+ReleaseNotesUrl: $HOMEPAGE/releases/tag/$TAG
+ManifestType: defaultLocale
+ManifestVersion: 1.9.0

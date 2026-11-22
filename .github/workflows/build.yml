@@ -3,12 +3,14 @@ name: Build and release desktop binaries
 on:
   push:
     branches: ['**']
-    tags: ['v*']
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
   pull_request:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing tag to build and publish (leave blank for a test build)
+        description: Existing stable tag (X.Y.Z), or leave blank for a test build
         type: string
         required: false
 
@@ -50,13 +52,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libegl1-mesa-dev libgles2-mesa-dev libxcursor-dev libxfixes-dev
       - name: Test and build
-        id: package
+        id: build
         shell: bash
         run: |
           mkdir -p dist
           version=dev
           if [[ -n "$RELEASE_TAG" ]]; then
-            [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+            [[ "$RELEASE_TAG" =~ ^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
             version="$RELEASE_TAG"
           fi
           flags="-s -w -X main.version=$version"
@@ -79,10 +81,6 @@ jobs:
               go build -trimpath -ldflags="$flags" -o "$output" .
               codesign --force --sign - "$output"
               codesign --verify "$output"
-              bundle="$RUNNER_TEMP/Wireproxy Desktop ${version}.app"
-              sh scripts/build-macos-app.sh "$bundle" "$output" "$version"
-              ditto -c -k --keepParent "$bundle" "$output.zip"
-              rm -- "$output"
               ;;
           esac
           if [[ "$RUNNER_OS" == Linux && -f scripts/build-rpm.sh ]]; then
@@ -91,7 +89,32 @@ jobs:
               sh /src/scripts/build-rpm.sh /out "$1" "$2" "$3"
             ' -- "$version" "${{ matrix.target }}" "${GITHUB_SHA:0:12}"
           fi
-          suffix=$version
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Package macOS application
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+          TARGET: ${{ matrix.target }}
+          NOTARIZE_MACOS: ${{ env.RELEASE_TAG != '' && (vars.NOTARIZE_MACOS_RELEASES == 'true' || vars.PUBLISH_HOMEBREW == 'true') }}
+          MACOS_CERTIFICATE_BASE64: ${{ env.RELEASE_TAG != '' && secrets.MACOS_CERTIFICATE_BASE64 || '' }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.MACOS_CERTIFICATE_PASSWORD || '' }}
+          APPLE_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_ID || '' }}
+          APPLE_TEAM_ID: ${{ env.RELEASE_TAG != '' && secrets.APPLE_TEAM_ID || '' }}
+          APPLE_APP_PASSWORD: ${{ env.RELEASE_TAG != '' && secrets.APPLE_APP_PASSWORD || '' }}
+        run: |
+          output="dist/wireproxy-desktop-$TARGET"
+          bundle="$RUNNER_TEMP/Wireproxy Desktop.app"
+          sh scripts/build-macos-app.sh "$bundle" "$output" "$VERSION"
+          ditto -c -k --keepParent "$bundle" "$output.zip"
+          rm -- "$output"
+      - name: Version artifact filenames
+        id: package
+        shell: bash
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          suffix=$VERSION
           if [[ "$suffix" == dev ]]; then suffix="dev-${GITHUB_SHA:0:12}"; fi
           for file in dist/wireproxy-desktop-"${{ matrix.target }}"*; do
             case "$file" in
@@ -107,9 +130,89 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  windows-installers:
+    runs-on: windows-2025
+    outputs:
+      version: ${{ steps.installers.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG && format('refs/tags/{0}', env.RELEASE_TAG) || github.sha }}
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build WinGet installers
+        id: installers
+        shell: pwsh
+        run: |
+          if (!(Test-Path scripts/build-windows-installer.ps1)) {
+              if ($env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:RELEASE_TAG) {
+                  Write-Output 'This historical tag predates the Windows installer.'
+                  return
+              }
+              throw 'Missing build-windows-installer.ps1'
+          }
+          $tag = $env:RELEASE_TAG
+          $version = $tag
+          $artifactVersion = $tag
+          if (!$tag) {
+              $tag = '0.0.0'
+              $version = 'dev'
+              $artifactVersion = "dev-$($env:GITHUB_SHA.Substring(0, 12))"
+          }
+          if ($tag -cnotmatch '^v?(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+              throw 'Expected a stable release tag X.Y.Z'
+          }
+          $env:GOOS = 'windows'
+          $env:CGO_ENABLED = '0'
+          foreach ($arch in 'amd64', 'arm64') {
+              $env:GOARCH = $arch
+              $binary = Join-Path $env:RUNNER_TEMP "wireproxy-desktop-$arch.exe"
+              go build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=$version" -o $binary .
+              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+              ./scripts/build-windows-installer.ps1 -Tag $tag -Architecture $arch -Binary $binary -OutputDirectory dist
+          }
+          $installDir = Join-Path $env:LOCALAPPDATA 'Programs/Wireproxy Desktop'
+          if (Test-Path -LiteralPath $installDir) { throw 'Expected a clean runner' }
+          $setup = "dist/wireproxy-desktop-setup-windows-amd64-$tag.exe"
+          $install = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -WindowStyle Hidden -PassThru -Wait
+          if ($install.ExitCode -ne 0) { throw "Installer exited with $($install.ExitCode)" }
+          $uninstall = Join-Path $installDir 'unins000.exe'
+          $registration = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\WeslyG.WireproxyDesktop_is1'
+          try {
+              foreach ($file in 'wireproxy-desktop.exe', 'winget-managed') {
+                  if (!(Test-Path -LiteralPath (Join-Path $installDir $file) -PathType Leaf)) {
+                      throw "Missing installed file $file"
+                  }
+              }
+              $shortcut = Join-Path ([Environment]::GetFolderPath('Programs')) 'Wireproxy Desktop.lnk'
+              if (!(Test-Path -LiteralPath $shortcut -PathType Leaf)) { throw 'Start menu shortcut not installed' }
+              if ((Get-ItemProperty -LiteralPath $registration).DisplayVersion -ne ($tag -creplace '^v', '')) {
+                  throw 'Wrong version registered in Apps & Features'
+              }
+          } finally {
+              $remove = Start-Process -FilePath $uninstall -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -WindowStyle Hidden -PassThru -Wait
+              if ($remove.ExitCode -ne 0) { throw "Uninstaller exited with $($remove.ExitCode)" }
+          }
+          if (Test-Path -LiteralPath (Join-Path $installDir 'wireproxy-desktop.exe')) { throw 'Application still installed' }
+          if (Test-Path -LiteralPath $shortcut) { throw 'Start menu shortcut still installed' }
+          if (Test-Path -LiteralPath $registration) { throw 'Apps & Features entry still registered' }
+          if (!$env:RELEASE_TAG) {
+              Get-ChildItem -LiteralPath dist -Filter "*-$tag.exe" | ForEach-Object {
+                  Rename-Item -LiteralPath $_.FullName -NewName ($_.Name.Replace("-$tag.exe", "-$artifactVersion.exe"))
+              }
+          }
+          "version=$artifactVersion" >> $env:GITHUB_OUTPUT
+      - uses: actions/upload-artifact@v4
+        if: steps.installers.outputs.version != ''
+        with:
+          name: wireproxy-desktop-windows-installers-${{ steps.installers.outputs.version }}
+          path: dist/*.exe
+          if-no-files-found: error
+
   release:
     if: github.ref_type == 'tag' || (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
-    needs: build
+    needs: [build, windows-installers]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -143,3 +246,14 @@ jobs:
           ' CHANGELOG.md > release-notes.md
           gh release create "$RELEASE_TAG" dist/* \
             --verify-tag --generate-notes --notes-file release-notes.md --title "$RELEASE_TAG"
+
+  package-delivery:
+    needs: [release, windows-installers]
+    if: needs.windows-installers.outputs.version != '' && (vars.PUBLISH_WINGET == 'true' || vars.PUBLISH_HOMEBREW == 'true')
+    uses: ./.github/workflows/package-delivery.yml
+    with:
+      release_tag: ${{ inputs.release_tag || github.ref_name }}
+      publish: true
+    secrets:
+      WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
+      HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
