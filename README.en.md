@@ -31,11 +31,17 @@ The prebuilt binary runs under a regular user account. It requires no installer,
 
 | OS | Target environment | What you need to run it |
 | --- | --- | --- |
-| Windows | Windows 11, x64 or ARM64 | Open the downloaded `.exe`. No additional components are required. |
+| Windows | Windows 10 version 2004 (build 19041) or later, x64 or ARM64 | Open the downloaded `.exe`. No additional components are required. |
 | macOS | macOS 15 Sequoia or later, Intel or Apple Silicon | Extract the ZIP and open Wireproxy Desktop.app in Finder. The built-in Keychain stores profiles. |
 | Linux | Ubuntu 24.04 Desktop, x64 or ARM64 | An X11 or Wayland desktop session with EGL/OpenGL ES libraries and an available Secret Service. If your desktop lacks one, install GNOME Keyring or enable a compatible KWallet service. The tray requires a StatusNotifier host. |
 
 The table lists the [build targets](.github/workflows/build.yml). Other Linux distributions need compatible system libraries. On Linux, you may need to make the downloaded file executable. For example, on Linux x64 run `chmod +x ./wireproxy-desktop-linux-amd64`, then `./wireproxy-desktop-linux-amd64`.
+
+### Windows compatibility
+
+The new installer and WinGet package require Windows 10 version 2004 (build 19041) or later. Press **Win+R**, enter `winver`, and check the OS build. Choose **x64** for 64-bit Intel and AMD PCs or **ARM64** for Windows on ARM.
+
+Previously released installers may require build 22000 (Windows 11). The lower minimum applies to builds with the updated installer and manifest. Installation and launch on Windows 10 build 19041 have yet to be verified.
 
 ### Install in the Linux applications menu
 

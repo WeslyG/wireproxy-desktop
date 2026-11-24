@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.1.1
+
+- Lower the Windows installer and WinGet minimum to Windows 10 version 2004 (build 19041).
+- Document the Windows build requirement and how to choose the installer for x64 or ARM64.
+
 ## 1.1.0
 
 - Add x64 and ARM64 Windows installers with a Start menu shortcut and standard uninstall support. Installer builds can be updated through WinGet once the package is published.
